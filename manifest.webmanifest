@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "무브콜 (시험판)",
+  "short_name": "무브콜",
+  "description": "QR로 받는 주차 이동 요청 · 사고 알림",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#131a2c",
+  "theme_color": "#131a2c",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
