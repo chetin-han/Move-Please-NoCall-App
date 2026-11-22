@@ -4,7 +4,7 @@ const APP = $('#app'), OV = $('#ov');
 let me = null, car = null, active = null, aMsgs = [], aUrls = [], unread = 0;
 let view = 'home', recs = [], rec = null;
 let ov = null, ovKey = '', photoI = 0, photoList = [], freeInput = false;
-let su = null, lastBuzz = 0, pState = 'unsupported', deferredInstall = null, chan = null;
+let su = null, sd = null, lastBuzz = 0, pState = 'unsupported', deferredInstall = null, chan = null;
 
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (!car) render(); });
 
@@ -86,15 +86,14 @@ function subscribe() {
 }
 /* 알림 버튼(곧 갈게요 등)·앱 바로가기(상태 바꾸기)로 들어온 경우 */
 async function handleParams() {
-  const rid = params.get('rid'), reply = params.get('reply'), chat = params.get('chat'), st = params.get('st');
+  const rid = params.get('rid'), reply = params.get('reply'), chat = params.get('chat');
   if (rid && (!active || active.id !== rid)) {
     const { data } = await sb.from('requests').select('*').eq('id', rid).maybeSingle();
     if (data && OPEN.includes(data.status)) await setActive(data);
   }
   if (reply && active && active.id === rid && active.status === 'ringing' && REP(reply)) await doReply(reply, true);
   if (chat && active) ov = 'chat';
-  if (st && (STATUS_MSG[st] || st === 'none')) await setStatus(st, true);
-  if (rid || reply || chat || st) history.replaceState(null, '', location.pathname);
+  if (rid || reply || chat) history.replaceState(null, '', location.pathname);
 }
 
 /* ---------- 화면 ---------- */
@@ -104,7 +103,6 @@ const who = () => active.kind === 'move' ? '요청자' : active.kind === 'bb' ? 
 const whoWith = () => who() + (who().endsWith('분') ? '과' : '와');
 const chatBtn = () => `<button class="btn soft" data-act="chat">💬 ${whoWith()} 메시지<span class="unread" id="o-unread" hidden></span></button><div class="lastmsg" id="o-last"></div>`;
 const carUrl = () => new URL('c.html?id=' + car.id, location.href).href;
-const statusUrl = st => new URL(`s.html?k=${car.status_key}&st=${st}`, location.href).href;
 const fbBanner = () => active.feedback ? `<div class="fbanner">⚠ 요청자: “${FEEDBACK[active.feedback]}”${active.feedback === 'notyet' ? '' : '<br>직접 와 주셔야 해요'}</div>` : '';
 function detailCard(r, urls) {
   const a = r.acc || {};
@@ -132,7 +130,7 @@ function detailCard(r, urls) {
     ${urls.length ? `<div class="thumbs">${urls.map((u, i) => `<img src="${u}" data-act="photo" data-i="${i}" alt="현장 사진">`).join('')}</div>` : ''}`;
 }
 const replyBtns = r => `<div class="replies${r.kind === 'move' && !r.feedback ? '' : ' col'}">${replySet(r).map(x => `<button class="rp${x.alt ? ' alt' : ''}${r.level === 'urgent' && !x.alt ? ' red' : ''}" data-act="reply" data-k="${x.k}">${x.icon} ${x.t}${x.sub ? `<small>${x.sub}</small>` : ''}</button>`).join('')}</div>`;
-const statusLine = () => `${car.status_code ? `👤 ${STATUS_MSG[car.status_code]} <span style="opacity:.6">(${hhmm(car.status_at)})</span>` : '👤 상태 표시 안 함'}${leaveValid(car.leave_at, car.status_at) ? `<br>🕒 ${esc(car.leave_at)}에 나갈 예정` : ''}`;
+const statusLine = () => { const t = [statusText(car), leaveText(car)].filter(Boolean); return t.length ? t.map(esc).join('<br>') : '💬 남긴 말 없음 · 남겨 두면 요청자가 편하게 연락해요'; };
 
 const W = {
   welcome: () => `<div class="welcome">
@@ -333,31 +331,29 @@ function setOv() {
     </div></div>`;
 }
 function statusOv() {
-  const o = k => `<button class="opt${(car.status_code || 'none') === k ? ' on' : ''}" data-act="set-status" data-k="${k}"><b>${(car.status_code || 'none') === k ? '◉' : '○'} ${STATUS_MSG[k] || '표시 안 함'}</b></button>`;
-  const link = (st, t) => `<div class="linkrow"><span>${t}</span><button data-act="copy" data-t="${esc(statusUrl(st))}">링크 복사</button></div>`;
-  return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>내 상태 알리기</b><div class="muted">요청자가 QR을 찍으면 바로 보여요</div></div></div>
+  const d = sd, sel = k => (d.code || 'none') === k;
+  const preview = statusText({ status_code: d.code, status_min: d.min, status_until: d.until, status_at: new Date().toISOString() });
+  const opt = (k, title, desc) => `<button class="opt${sel(k) ? ' on' : ''}" data-act="sd-code" data-k="${k}"><b>${sel(k) ? '◉' : '○'} ${title}</b>${desc ? `<p>${desc}</p>` : ''}</button>`;
+  return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>요청자에게 남길 말</b><div class="muted">QR을 찍으면 가장 먼저 보여요</div></div></div>
     <div class="ov-body">
-      ${Object.keys(STATUS_MSG).map(o).join('')}${o('none')}
+      <p class="muted" style="line-height:1.55">요청자가 마음 편히 연락할 수 있게, 지금 얼마나 빨리 올 수 있는지 알려 주세요.</p>
+      ${opt('near', '🚶 가까이 있어요', '○분 거리에 있어요. 연락 주시면 바로 갈게요')}
+      ${sel('near') ? `<div class="chips c4" style="margin-top:8px">${NEAR_MIN.map(m => `<button class="chip${d.min === m ? ' on' : ''}" data-act="sd-min" data-k="${m}">${m}분</button>`).join('')}</div>` : ''}
+      ${opt('meeting', '💼 회의·업무 중이에요', '○시까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요')}
+      ${sel('meeting') ? `<div class="row" style="margin-top:8px"><span style="align-self:center;font-size:14px;font-weight:700;flex:none">끝나는 시각</span><input class="fi" id="sd-until" type="time" value="${esc(d.until || '')}"></div>` : ''}
+      ${opt('none', '남기지 않기', '')}
+      ${preview ? `<div class="ownerstat"><div style="font-size:11.5px;opacity:.75;margin-bottom:2px">요청자에게 이렇게 보여요</div>${esc(preview)}</div>` : ''}
+      <button class="btn primary" data-act="save-status">저장</button>
+      <p class="muted" style="font-size:12px;margin-top:8px;line-height:1.5">'가까이 있어요'는 12시간 뒤, '회의 중'은 끝나는 시각이 지나면 자동으로 사라져요.</p>
       <div class="h">🕒 출차 예고</div>
       <div class="row"><input class="fi" id="leave-at" type="time" value="${esc(car.leave_at || '')}"><button data-act="set-leave">저장</button></div>
-      ${car.leave_at ? `<p class="muted" style="margin-top:6px">지금: ${esc(car.leave_at)}에 나갈 예정이라고 보여요 <button class="linkbtn" data-act="clear-leave">지우기</button></p>` : '<p class="muted" style="margin-top:6px">"○시에 나가요"를 요청자에게 미리 보여 줘요</p>'}
-      <div class="h">🤖 차 블루투스로 자동 바꾸기</div>
-      <p class="muted" style="line-height:1.55">아래 링크를 열면 상태가 바로 바뀌어요. 폰의 자동화 기능에 걸어 두면 차에 타고 내릴 때 자동으로 바뀝니다.</p>
-      ${link('driving', '🚗 운전 중 (차 블루투스 연결될 때)')}
-      ${link('parked', '🅿️ 주차해 두었어요 (연결 끊길 때)')}
-      ${link('meeting', '💼 회의 중')}
-      <ol class="steps">
-        <li><b>가장 쉬운 방법:</b> 홈 화면의 무브콜 아이콘을 <b>길게 누르면</b> '운전 중·주차함·회의 중' 바로가기가 나와요.</li>
-        <li><b>안드로이드 자동화:</b> 삼성 <b>모드 및 루틴</b>(또는 무료 앱 MacroDroid)에서 조건을 <b>블루투스 기기 연결 → 내 차</b>로 정하고, 동작에 <b>웹 주소 열기</b>를 골라 위 '운전 중' 링크를 붙여 넣으세요. '연결 끊김' 루틴에는 '주차' 링크를 넣으세요. (메뉴 이름은 폰마다 조금 달라요)</li>
-        <li><b>아이폰:</b> 단축어 앱 → 자동화 → <b>CarPlay(또는 블루투스) 연결 시</b> → <b>URL 열기</b>에 링크를 넣으세요.</li>
-      </ol>
-      <p class="muted" style="font-size:11.5px;margin-top:8px">링크는 내 차 전용이에요. 다른 사람에게 보내지 마세요.</p>
+      ${leaveText(car) ? `<p class="muted" style="margin-top:6px">${esc(leaveText(car))} <button class="linkbtn" data-act="clear-leave">지우기</button></p>` : '<p class="muted" style="margin-top:6px">"○시에 나가요"를 요청자에게 미리 보여 줘요</p>'}
     </div></div>`;
 }
 function curOvKey() {
   if (ov === 'signup') return 'signup|' + suKey();
   if (ov === 'set') return 'set|' + car.call_type;
-  if (ov === 'status') return 'status|' + car.status_code + '|' + car.leave_at;
+  if (ov === 'status') return 'status|' + JSON.stringify(sd) + '|' + car.leave_at + '|' + car.leave_set_at;
   if (ov === 'photo') return 'photo' + photoI;
   if (ov === 'chat') return 'chat|' + (active?.id || '') + '|' + freeInput;
   return ov || '';
@@ -400,10 +396,12 @@ async function resolveReq() {
   const data = await updActive({ status: 'resolving', resolve_req_at: new Date().toISOString() });
   if (data) { active = data; render(); toast('요청자에게 해결 확인을 보냈어요'); }
 }
-async function setStatus(st, fromShortcut) {
-  const { data, error } = await sb.from('cars').update({ status_code: st === 'none' ? null : st, status_at: new Date().toISOString() }).eq('id', car.id).select().single();
-  if (error) { toast('바꾸지 못했어요: ' + error.message); return; }
-  car = data; if (fromShortcut) toast('상태: ' + (STATUS_MSG[st] || '표시 안 함')); renderOv(); if (!fromShortcut) render();
+async function saveStatus() {
+  if (sd.code === 'meeting' && !sd.until) { toast('회의가 끝나는 시각을 골라 주세요'); return; }
+  const patch = { status_code: sd.code, status_min: sd.code === 'near' ? (sd.min || 5) : null, status_until: sd.code === 'meeting' ? sd.until : null, status_at: new Date().toISOString() };
+  const { data, error } = await sb.from('cars').update(patch).eq('id', car.id).select().single();
+  if (error) { toast('저장하지 못했어요: ' + error.message); return; }
+  car = data; ov = null; toast(sd.code ? '남길 말을 저장했어요' : '남긴 말을 지웠어요'); render();
 }
 async function sendMsg(text) {
   text = String(text || '').trim(); if (!text || !active) return;
@@ -486,13 +484,15 @@ document.addEventListener('click', async e => {
       if (error) { toast(error.message); break; }
       car.call_type = k; renderOv(); render(); break;
     }
-    case 'open-status': ov = 'status'; renderOv(); break;
-    case 'set-status': await setStatus(k); break;
+    case 'open-status': sd = { code: statusText(car) ? car.status_code : null, min: car.status_min || 5, until: car.status_until || '' }; ov = 'status'; renderOv(); break;
+    case 'sd-code': sd.code = k === 'none' ? null : k; renderOv(); break;
+    case 'sd-min': sd.min = +k; renderOv(); break;
+    case 'save-status': await saveStatus(); break;
     case 'set-leave': case 'clear-leave': {
       const v = b.dataset.act === 'clear-leave' ? null : ($('#leave-at')?.value || null);
-      const { data, error } = await sb.from('cars').update({ leave_at: v, status_at: new Date().toISOString() }).eq('id', car.id).select().single();
+      const { data, error } = await sb.from('cars').update({ leave_at: v, leave_set_at: new Date().toISOString() }).eq('id', car.id).select().single();
       if (error) { toast(error.message); break; }
-      car = data; toast(v ? `${v}에 나갈 예정이라고 표시해요` : '출차 예고를 지웠어요'); renderOv(); render(); break;
+      car = data; toast(v ? `${koTime(v)}에 나갈 예정이라고 표시해요` : '출차 예고를 지웠어요'); renderOv(); render(); break;
     }
     case 'close-ov': case 'close-photo': ov = null; renderOv(); break;
     /* 요청 응답 */
@@ -528,7 +528,10 @@ document.addEventListener('input', e => {
     const b = $('#su-codebtn'); if (b) b.disabled = su.phone.replace(/\D/g, '').length < 10;
   }
 });
-document.addEventListener('change', e => { if (e.target.id === 'su-agree') { su.agree = e.target.checked; updSuBtn(); } });
+document.addEventListener('change', e => {
+  if (e.target.id === 'su-agree') { su.agree = e.target.checked; updSuBtn(); }
+  if (e.target.id === 'sd-until') { sd.until = e.target.value; renderOv(); }
+});
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'chat-in' && !e.isComposing) { e.preventDefault(); const v = e.target.value; e.target.value = ''; sendMsg(v); }
 });

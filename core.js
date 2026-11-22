@@ -101,11 +101,23 @@ const QUICK = {
 };
 const quickFor = (r, side) => ({ move: '', acc: 'Acc', bb: 'Bb', etc: 'Etc' }[r.kind] || '');
 const QUICK_OF = (r, side) => QUICK[side + quickFor(r)] || QUICK[side];
-/* 차주 상태 메시지 */
-const STATUS_MSG = {
-  near: '근처에 있어요', far10: '10분 거리에 있어요', meeting: '회의 중이라 확인이 늦을 수 있어요',
-  driving: '운전 중이라 확인이 늦어요', parked: '주차해 두었어요'
-};
+/* 차주 상태 메시지: 요청자가 편한 마음으로 연락할 수 있게 안심시키는 문구 */
+const NEAR_MIN = [1, 3, 5, 10, 15, 20, 30];
+const ampm = d => { d = new Date(d); return `${d.getHours() < 12 ? '오전' : '오후'} ${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`; };
+const koTime = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}시${m ? ` ${m}분` : ''}`; };
+function statusText(c) {
+  if (!c || !c.status_code || !c.status_at) return '';
+  if (c.status_code === 'near') {
+    if (Date.now() - new Date(c.status_at) > 12 * 3600e3) return '';   // 12시간 지나면 숨김
+    return `🚶 ${c.status_min || 5}분 거리에 있어요. 연락 주시면 바로 갈게요`;
+  }
+  if (c.status_code === 'meeting') {
+    if (!timeValid(c.status_until, c.status_at, 0)) return '';         // 회의가 끝나면 숨김
+    return `💼 ${koTime(c.status_until)}까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요`;
+  }
+  return '';
+}
+const leaveText = c => timeValid(c.leave_at, c.leave_set_at || c.status_at, 30) ? `🕒 ${koTime(c.leave_at)}에 나갈 예정이에요` : '';
 const STATUS = { ringing: '응답 대기', replied: '답장함', resolving: '해결 확인 중', done: '완료', cancelled: '취소' };
 const CALL_LABEL = { safe: '안심번호', real: '내 휴대폰 번호', none: '전화 받지 않음' };
 const KIND_LABEL = { move: '주차 이동 요청', acc: '사고 알림', bb: '블랙박스 영상 요청', etc: '기타 알림' };
@@ -385,10 +397,10 @@ function chatOvHTML(title, sub, phrases, showInput) {
 const telBtns = tel => tel ? `<div class="telrow">
     ${tel === '119' || tel === 'both' ? '<a class="telbtn t119" href="tel:119">🚒 119 신고</a>' : ''}
     ${tel === '112' || tel === 'both' ? '<a class="telbtn t112" href="tel:112">🚓 112 신고</a>' : ''}</div>` : '';
-/* 출차 예고가 아직 유효한지 (설정 시각 기준 다음 해당 시각 + 30분까지만 보여 줌) */
-function leaveValid(leave, setAt) {
-  if (!leave || !setAt) return false;
-  const base = new Date(setAt), [h, m] = leave.split(':').map(Number), d = new Date(base);
+/* '○시' 같은 시각이 아직 지나지 않았는지 (설정 시각 이후 처음 오는 그 시각 + 여유 분) */
+function timeValid(t, setAt, graceMin) {
+  if (!t || !setAt) return false;
+  const base = new Date(setAt), [h, m] = t.split(':').map(Number), d = new Date(base);
   d.setHours(h, m, 0, 0); if (d < base) d.setDate(d.getDate() + 1);
-  return Date.now() < d.getTime() + 30 * 60000;
+  return Date.now() < d.getTime() + (graceMin || 0) * 60000;
 }

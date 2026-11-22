@@ -29,40 +29,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "shortcuts": [
-    {
-      "name": "상태: 운전 중",
-      "short_name": "운전 중",
-      "url": "./?st=driving",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "상태: 주차해 두었어요",
-      "short_name": "주차함",
-      "url": "./?st=parked",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "상태: 회의 중",
-      "short_name": "회의 중",
-      "url": "./?st=meeting",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    }
   ]
 }

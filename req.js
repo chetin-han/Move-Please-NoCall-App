@@ -80,11 +80,8 @@ const APPBAR = `<div class="appbar"><span class="logo">P</span>무브콜<button 
 const label = () => `${info.plate_masked} ${info.color || ''} ${info.kind || ''}`.trim();
 const LOCK = () => ({ safe: '🔒 차주 전화번호는 보이지 않아요.', real: '📞 차주가 휴대폰 번호로 전화 받기를 허용했어요.', none: '💬 차주는 메시지로만 연락받아요.' })[info.call_type];
 function ownerStatus() {
-  const fresh = info.status_at && Date.now() - new Date(info.status_at) < 24 * 3600e3;
-  const parts = [];
-  if (info.status_code && fresh && STATUS_MSG[info.status_code]) parts.push(`👤 차주 상태: <b>${STATUS_MSG[info.status_code]}</b> <span class="muted">(${hhmm(info.status_at)})</span>`);
-  if (leaveValid(info.leave_at, info.status_at)) parts.push(`🕒 <b>${esc(info.leave_at)}</b>에 나갈 예정이에요`);
-  return parts.length ? `<div class="ownerstat">${parts.join('<br>')}</div>` : '';
+  const parts = [statusText(info), leaveText(info)].filter(Boolean);
+  return parts.length ? `<div class="ownerstat"><div class="muted" style="color:#1f3a8a;font-size:11.5px;margin-bottom:2px">차주가 남긴 말 · ${ampm(info.status_at || info.leave_set_at)}</div>${parts.map(esc).join('<br>')}</div>` : '';
 }
 const CONTACT = () => `
   <div class="contact">
