@@ -1,10 +1,12 @@
-/* 무브콜 시험판 — 요청자 화면 (QR을 찍으면 열림: c.html?id=차량번호) */
+/* 무브콜 시험판 — 요청자 화면 (QR을 찍으면 열림: c.html?id=차량ID) */
 const params = new URLSearchParams(location.search), carId = params.get('id');
 const APP = $('#app'), OV = $('#ov');
-let me = null, info = null, cur = null, msgs = [], urls = [], unread = 0;
-let ov = null, ovKey = '', photoI = 0, photoList = [], callNum;
-let mode = 'move', form = { reason: null, msg: '' };
-let acc = { who: null, name: '', plate: '', phone: '', desc: '', blobs: [], previews: [], agree: false };
+let me = null, info = null, verified = false, cur = null, msgs = [], urls = [], unread = 0;
+let ov = null, ovKey = '', photoI = 0, photoList = [], callNum, freeInput = false;
+let mode = 'move', vErr = '';
+let mv = { reason: null, floor: null, zone: '', memo: '', blobs: [], previews: [] };
+let ac = { sub: null, name: '', plate: '', phone: '', desc: '', when: null, what: null, where: '', blobs: [], previews: [], agree: false };
+let et = { sub: null };
 let ringTimer = null, rings = 0, lastRes = null, sending = false, view = 'main', recs = [], rec = null, chan = null;
 
 /* ---------- 시작 ---------- */
@@ -12,12 +14,12 @@ async function boot() {
   try { me = await ensureUser(); }
   catch (e) { APP.innerHTML = `<div class="fatal">접속에 실패했어요.<br><small>${esc(e.message)}</small></div>`; return; }
   if (carId) {
-    const { data } = await sb.rpc('car_public', { cid: carId });
-    info = data?.[0] || null;
+    await loadInfo();
+    verified = sessionStorage.getItem('mc-ok-' + carId) === '1';
     if (info) {
       const { data: mine } = await sb.from('requests').select('*').eq('car_id', carId).eq('requester', me.id)
-        .in('status', ['ringing', 'replied']).order('created_at', { ascending: false }).limit(1);
-      if (mine?.[0]) await setCur(mine[0]);
+        .in('status', ['ringing', 'replied', 'resolving']).order('created_at', { ascending: false }).limit(1);
+      if (mine?.[0]) { verified = true; await setCur(mine[0]); }
     }
   }
   render();
@@ -28,10 +30,11 @@ async function boot() {
     if (data) { await setCur(data); render(); }
   });
 }
+async function loadInfo() { const { data } = await sb.rpc('car_public', { cid: carId }); info = data?.[0] || null; }
 async function setCur(r) {
   const changed = !cur || cur.id !== r.id;
   cur = r;
-  if (changed) { unread = 0; callNum = undefined; }
+  if (changed) { unread = 0; callNum = undefined; freeInput = false; }
   const { data } = await sb.from('messages').select('*').eq('request_id', r.id).order('id');
   msgs = data || [];
   urls = await photoUrls(r.photos);
@@ -43,8 +46,8 @@ function subscribeCur() {
   chan = sb.channel('req-' + cur.id)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'requests', filter: `id=eq.${cur.id}` }, p => {
       const prev = cur.status; cur = { ...cur, ...p.new };
-      if (prev === 'ringing' && cur.status === 'replied') vib([300, 100, 300]);
-      if (cur.status !== 'ringing') stopRing();
+      if (prev !== cur.status && ['replied', 'resolving', 'done'].includes(cur.status)) vib([300, 100, 300]);
+      if (cur.status === 'ringing') startRing(); else stopRing();
       render();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `request_id=eq.${cur.id}` }, p => {
@@ -55,16 +58,16 @@ function subscribeCur() {
     })
     .subscribe();
 }
-/* 응답이 올 때까지 몇 초마다 차주 폰에 알림을 다시 보냄 */
+/* 응답이 올 때까지 차주 폰에 알림을 다시 보냄 (긴급 4초 · 보통 6초 · 정보 20초) */
+const ringGap = () => ({ urgent: 4000, normal: 6000, info: 20000 }[cur?.level] || 6000);
 function startRing() {
   if (ringTimer) return;
-  const iv = cur.kind === 'acc' ? 4000 : 6000;
   const fire = async () => {
     if (!cur || cur.status !== 'ringing') { stopRing(); return; }
     const res = await notify('ring', cur.id);
     if (res && !res.skipped) { if (res.sent > 0) rings++; lastRes = res; updateRingInfo(); }
   };
-  fire(); ringTimer = setInterval(fire, iv);
+  fire(); ringTimer = setInterval(fire, ringGap());
 }
 function stopRing() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
 function updateRingInfo() {
@@ -72,111 +75,189 @@ function updateRingInfo() {
   const n = $('#r-nosub'); if (n) n.hidden = !(lastRes && (lastRes.subs === 0 || lastRes.error));
 }
 
-/* ---------- 화면 ---------- */
+/* ---------- 화면 조각 ---------- */
 const APPBAR = `<div class="appbar"><span class="logo">P</span>무브콜<button class="linkbtn" data-act="records" style="color:var(--sub)">내 기록</button></div>`;
 const label = () => `${info.plate_masked} ${info.color || ''} ${info.kind || ''}`.trim();
-const LOCK = () => ({
-  safe: '🔒 차주 전화번호는 보이지 않아요. 요청만 전달돼요.',
-  real: '📞 차주가 휴대폰 번호로 전화 받기를 허용했어요.',
-  none: '💬 차주는 메시지로만 연락받아요.'
-})[info.call_type];
+const LOCK = () => ({ safe: '🔒 차주 전화번호는 보이지 않아요.', real: '📞 차주가 휴대폰 번호로 전화 받기를 허용했어요.', none: '💬 차주는 메시지로만 연락받아요.' })[info.call_type];
+function ownerStatus() {
+  const fresh = info.status_at && Date.now() - new Date(info.status_at) < 24 * 3600e3;
+  const parts = [];
+  if (info.status_code && fresh && STATUS_MSG[info.status_code]) parts.push(`👤 차주 상태: <b>${STATUS_MSG[info.status_code]}</b> <span class="muted">(${hhmm(info.status_at)})</span>`);
+  if (leaveValid(info.leave_at, info.status_at)) parts.push(`🕒 <b>${esc(info.leave_at)}</b>에 나갈 예정이에요`);
+  return parts.length ? `<div class="ownerstat">${parts.join('<br>')}</div>` : '';
+}
 const CONTACT = () => `
   <div class="contact">
     <button class="cbtn" data-act="chat">💬 메시지<span class="unread" id="r-unread" hidden></span></button>
     <button class="cbtn call" data-act="dial"${info.call_type === 'none' ? ' disabled' : ''}>📞 전화걸기</button>
   </div>
   <div class="lastmsg" id="r-last"></div>`;
-const accOK = () => !!(acc.who && acc.name.trim() && acc.phone.replace(/\D/g, '').length >= 10 && (acc.who === 'saw' || acc.plate.trim()) && acc.agree);
-const updAccBtn = () => { const b = $('#a-send'); if (b && !sending) b.disabled = !accOK(); };
-function photosHTML() {
-  return acc.previews.map((src, i) => `<div class="ph"><img src="${src}" alt="첨부 사진 ${i + 1}"><button class="x" data-act="rm-photo" data-i="${i}" aria-label="사진 빼기">✕</button></div>`).join('')
-    + (acc.blobs.length < 3 ? `<label class="ph add">📷<br>사진 추가<input type="file" id="a-file" accept="image/*" multiple hidden></label>` : '');
-}
+const photosHTML = (o, max) => o.previews.map((src, i) => `<div class="ph"><img src="${src}" alt="첨부 사진 ${i + 1}"><button class="x" data-act="rm-photo" data-i="${i}" aria-label="사진 빼기">✕</button></div>`).join('')
+  + (o.blobs.length < max ? `<label class="ph add">📷<br>사진 추가<input type="file" class="pfile" accept="image/*"${max > 1 ? ' multiple' : ''} hidden></label>` : '');
+const curPhotoObj = () => mode === 'move' ? mv : ac;
+const curPhotoMax = () => mode === 'move' ? 1 : 3;
+
+const okMove = () => !!(mv.reason && mv.floor && mv.zone.trim());
+const okAcc = () => {
+  if (!ac.sub || !ac.agree) return false;
+  const ph = ac.phone.replace(/\D/g, '').length >= 10;
+  if (ac.sub === 'bb') return !!(ac.when && ac.what && ph);
+  return !!(ac.name.trim() && ph && (ac.sub === 'saw' || ac.plate.trim()));
+};
+const okEtc = () => !!et.sub;
+const updSend = () => {
+  const b = $('#send'); if (!b || sending) return;
+  b.disabled = !(mode === 'move' ? okMove() : mode === 'acc' ? okAcc() : okEtc());
+};
 
 const V = {
   bad: () => `${APPBAR}<div class="card center" style="margin-top:30px"><div style="font-size:40px">🤔</div>
     <div class="big" style="margin-top:8px">${carId ? '등록되지 않은 QR이에요' : 'QR 주소가 올바르지 않아요'}</div>
     <p class="muted" style="margin-top:8px;line-height:1.6">차주가 가입을 해지했거나 주소가 잘못됐어요.</p></div>`,
 
+  verify: () => `${APPBAR}
+    <div class="card verify">
+      <div style="font-size:32px">🚗</div>
+      <div class="big" style="margin-top:6px">이 차가 맞는지 확인할게요</div>
+      <p class="muted" style="margin-top:6px;line-height:1.6">QR이 붙은 차의 번호판을 보고<br>가려진 숫자를 입력해 주세요</p>
+      <div class="plate-hint">${esc(info.plate_hint)}</div>
+      <div class="digits">${(info.hide_idx || []).map((_, i) => `<input class="dg" id="dg${i}" inputmode="numeric" maxlength="1" autocomplete="off" aria-label="가려진 숫자 ${i + 1}">`).join('')}</div>
+      ${vErr ? `<div class="errline">${esc(vErr)}</div>` : ''}
+      <button class="btn primary" data-act="verify" id="vbtn" disabled>확인</button>
+    </div>`,
+
   form: () => {
     const head = `${APPBAR}
       <div class="card">
         <div class="car"><div class="ic">🚗</div><div><div class="plate">${esc(info.plate_masked)}</div><div class="muted">${esc(info.color || '')} ${esc(info.kind || '')}</div></div></div>
+        ${ownerStatus()}
         <div class="lockline">${LOCK()}</div>
       </div>
-      <div class="seg">
+      <div class="seg s3">
         <button class="${mode === 'move' ? 'on' : ''}" data-act="mode" data-k="move">🚗 이동 요청</button>
         <button class="red ${mode === 'acc' ? 'on' : ''}" data-act="mode" data-k="acc">🚨 사고 알림</button>
+        <button class="${mode === 'etc' ? 'on' : ''}" data-act="mode" data-k="etc">📢 기타 알림</button>
       </div>`;
+    const sendBtn = (cls, txt, ok) => `<button class="btn ${cls}" data-act="send" id="send"${ok && !sending ? '' : ' disabled'}>${sending ? '보내는 중…' : txt}</button>`;
     if (mode === 'move') return `${head}
       <div class="h">어떤 이유인가요?</div>
-      <div class="chips">${Object.entries(REASONS).map(([k, t]) => `<button class="chip${form.reason === k ? ' on' : ''}" data-act="reason" data-k="${k}">${t}</button>`).join('')}</div>
-      <div class="h">남길 말 <span class="muted">(선택)</span></div>
-      <textarea id="r-msg" maxlength="40" placeholder="예) 지하 2층 B-14 앞이에요">${esc(form.msg)}</textarea>
-      <div class="cnt"><span id="r-msgcnt">${form.msg.length}</span>/40</div>
+      <div class="chips">${Object.entries(REASONS).map(([k, t]) => `<button class="chip${mv.reason === k ? ' on' : ''}" data-act="pick" data-f="mv.reason" data-k="${k}">${t}</button>`).join('')}</div>
+      <div class="h">지금 어디에 계세요? <span class="muted">(차주가 빨리 찾을 수 있게)</span></div>
+      <div class="chips c3">${FLOORS.map(f => `<button class="chip${mv.floor === f ? ' on' : ''}" data-act="pick" data-f="mv.floor" data-k="${f}">${f}</button>`).join('')}</div>
+      <input class="fi" id="mv-zone" maxlength="20" placeholder="구역·기둥 번호 (예: B-14, 3번 기둥)" value="${esc(mv.zone)}" style="margin-top:10px" autocomplete="off">
+      <input class="fi" id="mv-memo" maxlength="30" placeholder="메모 (선택, 예: 엘리베이터 앞)" value="${esc(mv.memo)}" autocomplete="off">
+      <div class="h">현장 사진 <span class="muted">(선택)</span></div>
+      <div class="photos" id="photos">${photosHTML(mv, 1)}</div>
       <div class="spacer"></div>
-      <button class="btn primary" data-act="send" id="r-send"${form.reason && !sending ? '' : ' disabled'}>${sending ? '보내는 중…' : '📳 차주에게 알림 보내기'}</button>`;
+      ${sendBtn('primary', '📳 차주에게 알림 보내기', okMove())}`;
+    if (mode === 'acc') {
+      const isBb = ac.sub === 'bb';
+      return `${head}
+      <div class="h">어떤 일인가요?</div>
+      <div class="chips one">
+        <button class="chip red${ac.sub === 'hit' ? ' on' : ''}" data-act="pick" data-f="ac.sub" data-k="hit">🙇 제가 사고를 냈어요 (문콕·접촉)</button>
+        <button class="chip red${ac.sub === 'saw' ? ' on' : ''}" data-act="pick" data-f="ac.sub" data-k="saw">👀 사고를 목격했어요</button>
+        <button class="chip red${ac.sub === 'bb' ? ' on' : ''}" data-act="pick" data-f="ac.sub" data-k="bb">📹 블랙박스 영상을 부탁드려요</button>
+      </div>
+      ${!ac.sub ? '' : isBb ? `
+        <div class="h">언제 일인가요?</div>
+        <div class="chips c3">${BB_WHEN.map(w => `<button class="chip${ac.when === w ? ' on' : ''}" data-act="pick" data-f="ac.when" data-k="${w}">${w}</button>`).join('')}</div>
+        <div class="h">무슨 일인가요?</div>
+        <div class="chips c3">${BB_WHAT.map(w => `<button class="chip${ac.what === w ? ' on' : ''}" data-act="pick" data-f="ac.what" data-k="${w}">${w}</button>`).join('')}</div>
+        <input class="fi" id="ac-where" maxlength="30" placeholder="장소 (선택, 예: 정문 앞 도로)" value="${esc(ac.where)}" style="margin-top:10px" autocomplete="off">
+        <div class="h">영상을 받을 연락처</div>
+        <input class="fi" id="ac-name" maxlength="10" placeholder="이름 (선택)" value="${esc(ac.name)}" autocomplete="name">
+        <input class="fi" id="ac-phone" type="tel" inputmode="numeric" maxlength="13" placeholder="전화번호 (예: 010-1234-5678)" value="${esc(ac.phone)}" autocomplete="tel">
+        <label class="agree"><input type="checkbox" id="ac-agree"${ac.agree ? ' checked' : ''}> <span>차주에게 내 연락처를 전달하는 데 동의해요</span></label>
+        ${sendBtn('primary', '📹 영상 확인 요청 보내기', okAcc())}` : `
+        <div class="h">내 정보 <span class="muted">(차주에게 전달돼요)</span></div>
+        <input class="fi" id="ac-name" maxlength="10" placeholder="이름" value="${esc(ac.name)}" autocomplete="name">
+        <input class="fi" id="ac-plate" maxlength="12" placeholder="${ac.sub === 'saw' ? '내 차량번호 (목격자는 비워도 돼요)' : '내 차량번호 (예: 34나 5678)'}" value="${esc(ac.plate)}" autocomplete="off">
+        <input class="fi" id="ac-phone" type="tel" inputmode="numeric" maxlength="13" placeholder="전화번호 (예: 010-1234-5678)" value="${esc(ac.phone)}" autocomplete="tel">
+        <div class="h">사고 사진 <span class="muted">(최대 3장)</span></div>
+        <div class="photos" id="photos">${photosHTML(ac, 3)}</div>
+        <div class="h">사고 내용 <span class="muted">(선택)</span></div>
+        <textarea id="ac-desc" maxlength="60" placeholder="예) 후진하다 뒷범퍼를 살짝 긁었어요">${esc(ac.desc)}</textarea>
+        <label class="agree"><input type="checkbox" id="ac-agree"${ac.agree ? ' checked' : ''}> <span>차주에게 내 이름·차량번호·전화번호와 사진을 전달하는 데 동의해요</span></label>
+        ${sendBtn('danger', '🚨 차주에게 긴급 알림 보내기', okAcc())}`}`;
+    }
+    const sel = ETC[et.sub];
     return `${head}
-      <div class="h">어떤 상황인가요?</div>
-      <div class="chips">${Object.entries(WHO).map(([k, t]) => `<button class="chip red${acc.who === k ? ' on' : ''}" data-act="who" data-k="${k}">${t}</button>`).join('')}</div>
-      <div class="h">내 정보 <span class="muted">(차주에게 전달돼요)</span></div>
-      <input class="fi" id="a-name" maxlength="10" placeholder="이름" value="${esc(acc.name)}" autocomplete="name">
-      <input class="fi" id="a-plate" maxlength="12" placeholder="${acc.who === 'saw' ? '내 차량번호 (목격자는 비워도 돼요)' : '내 차량번호 (예: 34나 5678)'}" value="${esc(acc.plate)}" autocomplete="off">
-      <input class="fi" id="a-phone" type="tel" inputmode="numeric" maxlength="13" placeholder="전화번호 (예: 010-1234-5678)" value="${esc(acc.phone)}" autocomplete="tel">
-      <div class="h">사고 사진 <span class="muted">(최대 3장)</span></div>
-      <div class="photos" id="a-photos">${photosHTML()}</div>
-      <div class="h">사고 내용 <span class="muted">(선택)</span></div>
-      <textarea id="a-desc" maxlength="60" placeholder="예) 후진하다 뒷범퍼를 살짝 긁었어요">${esc(acc.desc)}</textarea>
-      <label class="agree"><input type="checkbox" id="a-agree"${acc.agree ? ' checked' : ''}> <span>차주에게 내 이름·차량번호·전화번호와 사진을 전달하는 데 동의해요</span></label>
-      <button class="btn danger" data-act="send-acc" id="a-send"${accOK() && !sending ? '' : ' disabled'}>${sending ? '보내는 중…' : '🚨 차주에게 긴급 알림 보내기'}</button>`;
+      ${ETC_GROUPS.map(g => `<div class="grp${g.urgent ? ' urgent' : ''}">${g.g}</div>
+        <div class="chips one">${g.items.map(i => `<button class="chip${g.urgent ? ' urgent' : ''}${et.sub === i.k ? ' on' : ''}" data-act="pick" data-f="et.sub" data-k="${i.k}">${i.t}</button>`).join('')}</div>`).join('')}
+      ${sel?.lv === 'urgent' ? `<div class="hint" style="margin-top:14px">⚠ 위급하면 <b>먼저 신고</b>해 주세요. 차주 알림은 함께 보낼 수 있어요.</div>${telBtns(sel.tel)}` : ''}
+      <div class="spacer"></div>
+      ${sendBtn(sel?.lv === 'urgent' ? 'danger' : 'primary', sel?.lv === 'urgent' ? '🆘 차주에게 긴급 알림 보내기' : '📢 차주에게 알림 보내기', okEtc())}`;
   },
 
   wait: () => {
-    const isAcc = cur.kind === 'acc';
+    const u = cur.level === 'urgent', icon = { move: '📳', acc: '🚨', bb: '📹', etc: u ? '🆘' : '📢' }[cur.kind];
     return `${APPBAR}
-      <div class="pulse${isAcc ? ' red' : ''}">${isAcc ? '🚨' : '📳'}</div>
-      <div class="big">${isAcc ? '차주에게 긴급 알림을 보내고 있어요' : '차주 폰에 알림을 보내고 있어요'}</div>
+      <div class="pulse${u ? ' red' : ''}">${icon}</div>
+      <div class="big">${cur.feedback ? '차주에게 직접 와 달라고 다시 알리고 있어요' : u ? '차주에게 긴급 알림을 보내고 있어요' : '차주 폰에 알림을 보내고 있어요'}</div>
       <p class="center muted" style="margin-top:6px">알림 <b id="r-rings">${rings}</b>번 보냄 · <span id="r-el">0초</span> 지남</p>
+      ${ownerStatus()}
+      ${cur.kind === 'etc' && u ? telBtns(ETC[cur.sub]?.tel) : ''}
       <ul class="tl">
-        <li><span class="dot done">✓</span><div><div class="t">${isAcc ? '사고 알림 보냄' : '요청 보냄'}</div><div class="s">${hhmm(cur.created_at)} · ${isAcc ? `${WHO[cur.acc?.who] || ''} · 사진 ${(cur.photos || []).length}장` : esc(REASONS[cur.reason] || '')}</div></div></li>
-        <li><span class="dot live${isAcc ? ' red' : ''}"></span><div><div class="t">차주 응답 기다리는 중</div><div class="s">답할 때까지 ${isAcc ? 4 : 6}초마다 다시 알려요 · 이 화면을 열어 두세요</div></div></li>
+        <li><span class="dot done">✓</span><div><div class="t">${esc(headOf(cur))}</div><div class="s">${hhmm(cur.created_at)}${cur.loc ? ' · 📍 ' + esc(locText(cur.loc)) : ''}</div></div></li>
+        <li><span class="dot live${u ? ' red' : ''}"></span><div><div class="t">차주 응답 기다리는 중</div><div class="s">답할 때까지 ${ringGap() / 1000}초마다 다시 알려요 · 이 화면을 열어 두세요</div></div></li>
       </ul>
-      <div class="hint" id="r-nosub" hidden>📵 차주 폰의 알림이 꺼져 있는 것 같아요. 차주가 무브콜 화면을 열어 두었다면 화면에서 알려 드려요. 메시지나 전화도 함께 해 보세요.</div>
-      <div class="hint" id="r-hint" hidden>${isAcc ? '⚠ 차주와 연락이 닿지 않으면 현장을 떠나기 전에 경찰(112)에도 알려 두는 것이 안전해요.' : '💡 답이 늦으면 메시지를 남기거나 전화를 걸어 보세요.'}</div>
+      <div class="hint" id="r-nosub" hidden>📵 차주 폰의 알림이 꺼져 있는 것 같아요. 메시지나 전화도 함께 해 보세요.</div>
+      <div class="hint" id="r-hint" hidden>${cur.kind === 'acc' ? '⚠ 차주와 연락이 닿지 않으면 현장을 떠나기 전에 경찰(112)에도 알려 두는 것이 안전해요.' : '💡 답이 늦으면 메시지를 남기거나 전화를 걸어 보세요.'}</div>
       <div class="spacer"></div>
       ${CONTACT()}
-      ${isAcc ? '' : '<button class="btn ghost" data-act="cancel">요청 취소</button>'}`;
+      ${cur.kind === 'acc' ? '' : '<button class="btn ghost" data-act="cancel">요청 취소</button>'}`;
   },
 
   replied: () => {
-    const rp = REP(cur.reply), isAcc = cur.kind === 'acc';
+    const rp = REP(cur.reply) || { icon: '💬', t: '확인했어요', min: 0 };
+    if (cur.reply === 'neutral') return `${APPBAR}
+      <div class="bubble"><div class="ic">🅽</div><div class="lb">“중립이에요, 살살 밀어 주세요”</div>
+        <div class="muted" style="margin-top:4px">차주가 ${secs(new Date(cur.replied_at) - new Date(cur.created_at))} 만에 답했어요</div></div>
+      <div class="caution">⚠ <b>천천히, 무리하지 마세요.</b> 혼자 밀기 어렵거나 경사진 곳이면 밀지 마세요.<br>시동이 꺼지면 브레이크가 자동으로 걸리는 차(전자식 주차브레이크)는 중립이어도 안 밀릴 수 있어요.</div>
+      <div class="h">밀어 보셨나요?</div>
+      <div class="fbgrid">
+        <button data-act="fb" data-k="pushfail">😣 밀어봤는데 안 돼요</button>
+        <button data-act="fb" data-k="notneutral">🤔 중립이 아닌 것 같아요</button>
+        <button data-act="fb" data-k="nospace">↔️ 밀 공간이 없어요</button>
+        <button data-act="chat">💬 메시지</button>
+        <button class="ok" data-act="resolve">✅ 해결됐어요</button>
+      </div>
+      <div class="lastmsg" id="r-last"></div>`;
     return `${APPBAR}
       <div class="bubble"><div class="ic">${rp.icon}</div><div class="lb">“${rp.t}”</div>
         <div class="muted" style="margin-top:4px">차주가 ${secs(new Date(cur.replied_at) - new Date(cur.created_at))} 만에 답했어요</div></div>
-      ${rp.min ? `<p class="center muted" style="margin-top:10px">도착 예상까지</p><div class="cd" id="r-cd">--:--</div>`
-        : `<p class="center" style="margin-top:14px;font-size:14px;line-height:1.6">차주가 곧 전화할 거예요.<br><span class="muted">전화를 받을 수 있게 해 주세요.</span></p>`}
-      <ul class="tl">
-        <li><span class="dot done">✓</span><div><div class="t">${isAcc ? '사고 알림' : '요청'} 보냄 · 차주 확인</div><div class="s">${hhmm(cur.created_at)} → ${hhmm(cur.replied_at)}</div></div></li>
-        <li><span class="dot live"></span><div><div class="t">${isAcc ? '차주가 현장 확인 중' : '차주가 오는 중'}</div><div class="s">${isAcc ? '연락처와 사진이 차주에게 전달됐어요' : '차를 옮기면 바로 알려 드려요'}</div></div></li>
-      </ul>
+      ${rp.min ? `<p class="center muted" style="margin-top:10px">도착 예상까지</p><div class="cd" id="r-cd">--:--</div>` : ''}
+      ${cur.reply === 'acc_call' ? '<p class="center" style="margin-top:12px;font-size:14px">차주가 곧 전화할 거예요. 전화를 받을 수 있게 해 주세요.</p>' : ''}
+      ${cur.reply === 'etc_report' ? `<p class="center" style="margin-top:12px;font-size:14px">차주가 신고를 부탁했어요.</p>${telBtns(ETC[cur.sub]?.tel || 'both')}` : ''}
+      ${cur.reply === 'cant' ? '<p class="center" style="margin-top:12px;font-size:14px;line-height:1.6">차주가 지금은 바로 이동하기 어렵다고 해요.<br><span class="muted">메시지나 전화로 사정을 이야기해 보세요.</span></p>' : ''}
       <div class="spacer"></div>
+      ${CONTACT()}
+      <button class="btn primary" data-act="resolve" style="background:var(--ok)">✅ 해결됐어요</button>`;
+  },
+
+  resolving: () => {
+    const left = new Date(cur.resolve_req_at).getTime() + 5 * 60000 - Date.now();
+    return `${APPBAR}
+      <div class="pulse ok">🙋</div>
+      <div class="big">차주가 해결됐다고 알렸어요</div>
+      <p class="center muted" style="margin-top:8px;line-height:1.6">정말 해결됐나요?<br><span id="r-auto">${mmss(Math.max(0, left))}</span> 뒤에는 자동으로 완료돼요</p>
+      <div class="spacer"></div>
+      <button class="btn primary" data-act="resolve" style="background:var(--ok)">✅ 네, 해결됐어요</button>
+      <button class="btn ghost" data-act="fb" data-k="notyet">아직 안 됐어요</button>
       ${CONTACT()}`;
   },
 
-  cant: () => `${APPBAR}
-    <div class="bubble gray"><div class="ic">🙏</div><div class="lb">“지금은 못 가요”</div>
-      <div class="muted" style="margin-top:4px">차주가 ${secs(new Date(cur.replied_at) - new Date(cur.created_at))} 만에 답했어요</div></div>
-    <p class="center" style="margin-top:16px;line-height:1.7;font-size:14px">차주가 지금은 바로 이동하기 어렵다고 답했어요.<br><span class="muted">메시지나 전화로 사정을 이야기해 보세요.</span></p>
-    <div class="spacer"></div>
-    ${CONTACT()}
-    <button class="btn ghost" data-act="restart">처음으로</button>`,
-
   done: () => {
-    const isAcc = cur.kind === 'acc', cancelled = cur.status === 'cancelled';
+    const cancelled = cur.status === 'cancelled';
+    const sentThanks = msgs.some(m => m.sender === 'r' && m.text.startsWith('💐'));
+    const th = cur.kind === 'move' ? THANKS.move : THANKS.other;
     return `${APPBAR}
       <div class="pulse ok">${cancelled ? '↩️' : '✅'}</div>
-      <div class="big">${cancelled ? '요청을 취소했어요' : isAcc ? '차주가 현장을 확인했어요' : '차량이 이동했어요'}</div>
-      <p class="center muted" style="margin-top:8px;line-height:1.6">${cancelled ? '' : isAcc ? '알려 주셔서 감사합니다.<br>이후 보험 처리는 차주와 직접 진행해 주세요.' : `요청부터 이동 완료까지 ${secs(new Date(cur.done_at) - new Date(cur.created_at))}`}</p>
+      <div class="big">${cancelled ? '요청을 취소했어요' : '해결됐어요'}</div>
+      <p class="center muted" style="margin-top:8px;line-height:1.6">${cancelled ? '' : cur.kind === 'acc' ? '알려 주셔서 감사합니다.<br>이후 보험 처리는 차주와 직접 진행해 주세요.' : cur.done_at ? `요청부터 해결까지 ${secs(new Date(cur.done_at) - new Date(cur.created_at))}${cur.resolved_by === 'auto' ? ' (자동 완료)' : ''}` : ''}</p>
+      ${cancelled ? '' : sentThanks ? '<div class="okline center">💐 감사 인사를 보냈어요</div>'
+        : `<div class="h">차주에게 감사 인사를 보낼까요?</div><div class="chips one">${th.map(t => `<button class="chip" data-act="thanks" data-t="${esc(t)}">${t}</button>`).join('')}</div>`}
       <div class="spacer"></div>
       <button class="btn soft" data-act="this-rec">🗂 이 기록 보기 · 저장</button>
       <button class="btn primary" data-act="restart">처음으로</button>`;
@@ -186,16 +267,20 @@ const V = {
   record: () => `<div class="appbar"><button class="back" data-act="records" aria-label="뒤로">‹</button>기록 상세</div>${recordDetailHTML(rec.r, rec.msgs, 'r', null, rec.urls)}`
 };
 
-function render() {
+function render(keepScroll) {
+  const y = scrollY;
   let h;
   if (view === 'records') h = V.records();
   else if (view === 'record' && rec) h = V.record();
   else if (!carId || !info) h = V.bad();
+  else if (!cur && !verified) h = V.verify();
   else if (!cur) h = V.form();
   else if (cur.status === 'ringing') h = V.wait();
-  else if (cur.status === 'replied') h = cur.reply === 'cant' ? V.cant() : V.replied();
+  else if (cur.status === 'replied') h = V.replied();
+  else if (cur.status === 'resolving') h = V.resolving();
   else h = V.done();
   APP.className = 'app'; APP.innerHTML = h;
+  if (keepScroll) scrollTo(0, y);
   updateMsgs(); updateRingInfo(); renderOv(); tick();
 }
 function updateMsgs() {
@@ -208,7 +293,7 @@ function updateMsgs() {
 function tick() {
   if (!cur || view !== 'main') return;
   if (cur.status === 'ringing') {
-    const el = Date.now() - new Date(cur.created_at).getTime();
+    const el = Date.now() - new Date(cur.feedback_at || cur.created_at).getTime();
     setText('#r-el', secs(el));
     const h = $('#r-hint'); if (h) h.hidden = el < 20000;
   }
@@ -216,17 +301,10 @@ function tick() {
     const rp = REP(cur.reply);
     if (rp?.min) { const rem = new Date(cur.replied_at).getTime() + rp.min * 60000 - Date.now(); setText('#r-cd', rem > 0 ? mmss(rem) : '곧 도착'); }
   }
+  if (cur.status === 'resolving') setText('#r-auto', mmss(Math.max(0, new Date(cur.resolve_req_at).getTime() + 5 * 60000 - Date.now())));
 }
 
 /* ---------- 겹쳐 뜨는 화면 ---------- */
-function chatOv() {
-  const q = cur.kind === 'acc' ? QUICK.rAcc : QUICK.r;
-  return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button>
-      <div><b>차주와 메시지</b><div class="muted">${esc(info?.plate_masked || '')} 차주 · 번호는 서로 보이지 않아요</div></div></div>
-    <div class="msgs" id="chat-msgs"></div>
-    <div class="quick">${q.map(t => `<button data-act="quick" data-t="${esc(t)}">${t}</button>`).join('')}</div>
-    <div class="inputbar"><input id="chat-in" maxlength="200" placeholder="메시지 입력" autocomplete="off" enterkeyhint="send"><button data-act="send-msg">전송</button></div></div>`;
-}
 const maskNum = n => { const d = n.replace(/\D/g, ''); return d.length >= 10 ? `${d.slice(0, 3)}-${d.slice(3, 5)}●●-●●${d.slice(-2)}` : n; };
 function dialOv() {
   const t = info.call_type;
@@ -241,34 +319,48 @@ function dialOv() {
 }
 function renderOv(force) {
   if ((ov === 'chat' || ov === 'dial') && !cur) ov = null;
-  const k = ov === 'photo' ? 'photo' + photoI : (ov || '') + '|' + (cur?.id || '');
+  const k = ov === 'photo' ? 'photo' + photoI : (ov || '') + '|' + (cur?.id || '') + '|' + freeInput;
   if (!force && k === ovKey) return; ovKey = k;
-  OV.innerHTML = ov === 'chat' ? chatOv() : ov === 'dial' ? dialOv() : ov === 'photo' ? photoOvHTML(photoList, photoI) : '';
+  OV.innerHTML = ov === 'chat' ? chatOvHTML('차주와 메시지', `${esc(info?.plate_masked || '')} 차주 · 번호는 서로 보이지 않아요`, QUICK_OF(cur, 'r'), freeInput)
+    : ov === 'dial' ? dialOv() : ov === 'photo' ? photoOvHTML(photoList, photoI) : '';
   if (ov === 'chat') { unread = 0; updateMsgs(); }
 }
 
 /* ---------- 동작 ---------- */
-async function sendMove() {
-  if (!form.reason || sending) return;
-  sending = true; render();
-  const { data, error } = await sb.from('requests').insert({ car_id: carId, car_label: label(), kind: 'move', reason: form.reason, msg: form.msg.trim() || null }).select().single();
-  sending = false;
-  if (error) { toast('보내지 못했어요: ' + error.message, 4000); render(); return; }
-  rings = 0; lastRes = null; await setCur(data); render();
+async function insertReq(row) {
+  const { data, error } = await sb.from('requests').insert({ car_id: carId, car_label: label(), ...row }).select().single();
+  if (error) throw error;
+  rings = 0; lastRes = null; await setCur(data);
 }
-async function sendAcc() {
-  if (!accOK() || sending) return;
-  sending = true; render();
+async function send() {
+  if (sending) return;
+  sending = true; render(true);
   try {
-    const paths = [];
-    for (let i = 0; i < acc.blobs.length; i++) { toast(`사진 올리는 중… ${i + 1}/${acc.blobs.length}`, 1200); paths.push(await uploadPhoto(acc.blobs[i], me.id)); }
-    const { data, error } = await sb.from('requests').insert({
-      car_id: carId, car_label: label(), kind: 'acc', photos: paths,
-      acc: { who: acc.who, name: acc.name.trim(), plate: acc.plate.trim(), phone: acc.phone, desc: acc.desc.trim() }
-    }).select().single();
-    if (error) throw error;
-    rings = 0; lastRes = null; sending = false; await setCur(data); render();
-  } catch (e) { sending = false; toast('보내지 못했어요: ' + (e.message || e), 4000); render(); }
+    if (mode === 'move') {
+      if (!okMove()) throw new Error('입력을 확인해 주세요');
+      const photos = []; for (const b of mv.blobs) photos.push(await uploadPhoto(b, me.id));
+      await insertReq({ kind: 'move', level: 'normal', reason: mv.reason, loc: { floor: mv.floor, zone: mv.zone.trim(), memo: mv.memo.trim() || null }, photos });
+    } else if (mode === 'acc') {
+      if (!okAcc()) throw new Error('입력을 확인해 주세요');
+      if (ac.sub === 'bb') await insertReq({ kind: 'bb', level: 'normal', sub: 'bb', acc: { when: ac.when, what: ac.what, where: ac.where.trim() || null, name: ac.name.trim() || null, phone: ac.phone } });
+      else {
+        const photos = [];
+        for (let i = 0; i < ac.blobs.length; i++) { toast(`사진 올리는 중… ${i + 1}/${ac.blobs.length}`, 1200); photos.push(await uploadPhoto(ac.blobs[i], me.id)); }
+        await insertReq({ kind: 'acc', level: 'urgent', sub: ac.sub, photos, acc: { who: ac.sub, name: ac.name.trim(), plate: ac.plate.trim(), phone: ac.phone, desc: ac.desc.trim() } });
+      }
+    } else {
+      const it = ETC[et.sub]; if (!it) throw new Error('알림 내용을 골라 주세요');
+      await insertReq({ kind: 'etc', level: it.lv, sub: it.k });
+    }
+    sending = false; render(); scrollTo(0, 0);
+  } catch (e) { sending = false; toast('보내지 못했어요: ' + (e.message || e), 4000); render(true); }
+}
+async function updateCur(patch, sysText) {
+  const { data, error } = await sb.from('requests').update(patch).eq('id', cur.id).select().single();
+  if (error) { toast('저장하지 못했어요: ' + error.message); return false; }
+  if (sysText) await sb.from('messages').insert({ request_id: cur.id, sender: 'sys', text: sysText });
+  cur = data; if (cur.status === 'ringing') startRing(); else stopRing();
+  render(); return true;
 }
 async function sendMsg(text) {
   text = String(text || '').trim(); if (!text || !cur) return;
@@ -276,47 +368,60 @@ async function sendMsg(text) {
   if (error) { toast('보내지 못했어요: ' + error.message); return; }
   if (!msgs.some(x => x.id === data.id)) msgs.push(data);
   updateMsgs();
-  notify('msg', cur.id, { text });   // 차주가 앱을 닫아 둬도 알림
+  notify('msg', cur.id, { text });
 }
 async function openRecords() {
   const { data } = await sb.from('requests').select('*').eq('requester', me.id).order('created_at', { ascending: false }).limit(50);
-  recs = data || []; view = 'records'; rec = null; render();
+  recs = data || []; view = 'records'; rec = null; render(); scrollTo(0, 0);
 }
 async function openRecord(id) {
   const r = recs.find(x => x.id === id) || (cur && cur.id === id ? cur : null); if (!r) return;
   const { data } = await sb.from('messages').select('*').eq('request_id', id).order('id');
   rec = { r, msgs: data || [], urls: await photoUrls(r.photos) }; view = 'record'; render(); scrollTo(0, 0);
 }
-function resetForm() {
-  acc.previews.forEach(u => URL.revokeObjectURL(u));
-  form = { reason: null, msg: '' };
-  acc = { who: null, name: acc.name, plate: acc.plate, phone: acc.phone, desc: '', blobs: [], previews: [], agree: false };  // 내 정보는 다음에도 쓰도록 남김
+function resetForms() {
+  [mv, ac].forEach(o => o.previews.forEach(u => URL.revokeObjectURL(u)));
+  mv = { reason: null, floor: null, zone: '', memo: '', blobs: [], previews: [] };
+  ac = { sub: null, name: ac.name, plate: ac.plate, phone: ac.phone, desc: '', when: null, what: null, where: '', blobs: [], previews: [], agree: false };
+  et = { sub: null };
 }
+const setField = (path, v) => { const [o, f] = path.split('.'); ({ mv, ac, et })[o][f] = v; };
 
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const k = b.dataset.k;
   switch (b.dataset.act) {
-    case 'mode': mode = k; render(); break;
-    case 'reason':
-      form.reason = k; $$('[data-act="reason"]').forEach(c => c.classList.toggle('on', c.dataset.k === k));
-      if ($('#r-send')) $('#r-send').disabled = false; break;
-    case 'who':
-      acc.who = k; $$('[data-act="who"]').forEach(c => c.classList.toggle('on', c.dataset.k === k));
-      $('#a-plate').placeholder = k === 'saw' ? '내 차량번호 (목격자는 비워도 돼요)' : '내 차량번호 (예: 34나 5678)';
-      updAccBtn(); break;
-    case 'rm-photo': {
-      const i = +b.dataset.i; URL.revokeObjectURL(acc.previews[i]); acc.blobs.splice(i, 1); acc.previews.splice(i, 1);
-      $('#a-photos').innerHTML = photosHTML(); break;
+    case 'verify': {
+      const ans = $$('.dg').map(i => i.value.trim()).join('');
+      const { data } = await sb.rpc('car_check', { cid: carId, idx: info.hide_idx, ans });
+      if (data === true) { verified = true; vErr = ''; sessionStorage.setItem('mc-ok-' + carId, '1'); render(); }
+      else { vErr = '숫자가 맞지 않아요. 다른 자리로 다시 확인해 주세요.'; await loadInfo(); render(); }
+      break;
     }
-    case 'send': await sendMove(); break;
-    case 'send-acc': await sendAcc(); break;
+    case 'mode': mode = k; render(); break;
+    case 'pick': setField(b.dataset.f, k); render(true); break;
+    case 'rm-photo': { const o = curPhotoObj(), i = +b.dataset.i; URL.revokeObjectURL(o.previews[i]); o.blobs.splice(i, 1); o.previews.splice(i, 1); $('#photos').innerHTML = photosHTML(o, curPhotoMax()); break; }
+    case 'send': await send(); break;
     case 'cancel':
       if (!cur || !confirm('요청을 취소할까요?')) return;
-      await sb.from('requests').update({ status: 'cancelled' }).eq('id', cur.id);
-      stopRing(); cur = { ...cur, status: 'cancelled' }; render(); break;
-    case 'restart': stopRing(); if (chan) sb.removeChannel(chan); chan = null; cur = null; msgs = []; urls = []; resetForm(); view = 'main'; render(); scrollTo(0, 0); break;
-    case 'chat': ov = 'chat'; renderOv(); setTimeout(() => $('#chat-in')?.focus(), 60); break;
+      await updateCur({ status: 'cancelled' }); break;
+    case 'fb': {
+      const code = k;
+      await updateCur({ status: 'ringing', reply: null, feedback: code, feedback_at: new Date().toISOString(), resolve_req_at: null },
+        `요청자: ${FEEDBACK[code]}${code === 'notyet' ? '' : ' → 직접 와 주셔야 해요'}`);
+      break;
+    }
+    case 'resolve': await updateCur({ status: 'done', done_at: new Date().toISOString(), resolved_by: 'r' }); break;
+    case 'thanks': {
+      const t = '💐 ' + b.dataset.t;
+      const { error } = await sb.from('messages').insert({ request_id: cur.id, sender: 'r', text: t });
+      if (error) { toast('보내지 못했어요'); break; }
+      msgs.push({ sender: 'r', text: t, created_at: new Date().toISOString(), id: -Date.now() });
+      notify('thanks', cur.id, { text: b.dataset.t }); toast('감사 인사를 보냈어요'); render(); break;
+    }
+    case 'restart': stopRing(); if (chan) sb.removeChannel(chan); chan = null; cur = null; msgs = []; urls = []; resetForms(); view = 'main'; await loadInfo(); render(); scrollTo(0, 0); break;
+    case 'chat': ov = 'chat'; renderOv(); break;
+    case 'free-input': freeInput = true; renderOv(true); updateMsgs(); setTimeout(() => $('#chat-in')?.focus(), 60); break;
     case 'dial':
       if (info.call_type === 'none') return;
       if (callNum === undefined) { const { data } = await sb.rpc('call_number', { rid: cur.id }); callNum = data || null; }
@@ -327,6 +432,12 @@ document.addEventListener('click', async e => {
     case 'send-msg': { const i = $('#chat-in'); const v = i.value; i.value = ''; await sendMsg(v); i.focus(); break; }
     case 'photo': photoList = rec ? rec.urls : urls; photoI = +b.dataset.i; ov = 'photo'; renderOv(); break;
     case 'save-photos': if (rec) await savePhotos(rec.r, rec.urls); break;
+    case 'keep': {
+      if (!rec) break;
+      const v = !rec.r.keep_r; const { error } = await sb.from('requests').update({ keep_r: v }).eq('id', rec.r.id);
+      if (!error) { rec.r.keep_r = v; toast(v ? '⭐ 보관했어요. 자동 삭제되지 않아요' : '보관을 해제했어요'); render(true); }
+      break;
+    }
     case 'records': await openRecords(); break;
     case 'this-rec': recs = [cur]; await openRecord(cur.id); break;
     case 'rec': await openRecord(b.dataset.id); break;
@@ -336,25 +447,34 @@ document.addEventListener('click', async e => {
   }
 });
 document.addEventListener('input', e => {
-  const id = e.target.id;
-  if (id === 'r-msg') { form.msg = e.target.value; setText('#r-msgcnt', form.msg.length); }
-  else if (id === 'a-name') acc.name = e.target.value;
-  else if (id === 'a-plate') acc.plate = e.target.value;
-  else if (id === 'a-phone') { const f = fmtPhone(e.target.value); if (e.target.value !== f) e.target.value = f; acc.phone = f; }
-  else if (id === 'a-desc') acc.desc = e.target.value;
+  const t = e.target, id = t.id;
+  if (t.classList.contains('dg')) {
+    t.value = t.value.replace(/\D/g, '').slice(0, 1);
+    if (t.value) { const n = t.nextElementSibling; if (n) n.focus(); }
+    const vb = $('#vbtn'); if (vb) vb.disabled = $$('.dg').some(i => !i.value);
+    return;
+  }
+  if (id === 'mv-zone') mv.zone = t.value;
+  else if (id === 'mv-memo') mv.memo = t.value;
+  else if (id === 'ac-name') ac.name = t.value;
+  else if (id === 'ac-plate') ac.plate = t.value;
+  else if (id === 'ac-phone') { const f = fmtPhone(t.value); if (t.value !== f) t.value = f; ac.phone = f; }
+  else if (id === 'ac-desc') ac.desc = t.value;
+  else if (id === 'ac-where') ac.where = t.value;
   else return;
-  updAccBtn();
+  updSend();
 });
 document.addEventListener('change', async e => {
-  if (e.target.id === 'a-agree') { acc.agree = e.target.checked; updAccBtn(); }
-  if (e.target.id === 'a-file') {
-    const files = [...e.target.files].slice(0, 3 - acc.blobs.length);
-    for (const f of files) { const b = await resizeImage(f); if (b) { acc.blobs.push(b); acc.previews.push(URL.createObjectURL(b)); } }
-    const box = $('#a-photos'); if (box) box.innerHTML = photosHTML();
+  if (e.target.id === 'ac-agree') { ac.agree = e.target.checked; updSend(); }
+  if (e.target.classList.contains('pfile')) {
+    const o = curPhotoObj(), max = curPhotoMax();
+    for (const f of [...e.target.files].slice(0, max - o.blobs.length)) { const b = await resizeImage(f); if (b) { o.blobs.push(b); o.previews.push(URL.createObjectURL(b)); } }
+    const box = $('#photos'); if (box) box.innerHTML = photosHTML(o, max);
   }
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'chat-in' && !e.isComposing) { e.preventDefault(); const v = e.target.value; e.target.value = ''; sendMsg(v); }
+  if (e.key === 'Enter' && e.target.classList.contains('dg')) { const vb = $('#vbtn'); if (vb && !vb.disabled) vb.click(); }
 });
 
 boot();

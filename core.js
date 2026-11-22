@@ -33,27 +33,87 @@ function toast(text, ms = 2600) {
 const REASONS = { exit: '출차해야 해요', block: '차가 앞을 막고 있어요', work: '하역·공사 작업이 있어요', etc: '기타' };
 const WHO = { hit: '제가 부딪혔어요', saw: '사고를 목격했어요' };
 const WHO_LONG = { hit: '상대 차량 운전자가 직접 알림', saw: '목격자가 알림' };
-const REPLIES = [
-  { k: 'now', t: '지금 가요', sub: '2분 안에', min: 2, icon: '🏃' },
-  { k: 'soon', t: '곧 갈게요', sub: '5분 안에', min: 5, icon: '🙆' },
-  { k: 'ten', t: '10분 걸려요', sub: '조금만 기다려 주세요', min: 10, icon: '⏱️' },
-  { k: 'cant', t: '지금은 못 가요', sub: '', min: 0, icon: '🙏' }
+const FLOORS = ['B4', 'B3', 'B2', 'B1', '1층', '2층', '3층', '4층 이상', '지상·야외'];
+/* 기타 알림: 긴급은 맨 위. level = urgent(긴급·반복) / normal(반복) / info(가끔 반복) */
+const ETC_GROUPS = [
+  { g: '🆘 긴급 상황', urgent: true, items: [
+    { k: 'child', t: '차 안에 아이·반려동물이 있어요', lv: 'urgent', tel: '119' },
+    { k: 'fire', t: '연기·화재·침수가 보여요', lv: 'urgent', tel: '119' },
+    { k: 'theft', t: '도난·파손이 의심돼요', lv: 'urgent', tel: '112' }] },
+  { g: '🚘 차량 상태', items: [
+    { k: 'light', t: '라이트·실내등이 켜져 있어요', lv: 'info' },
+    { k: 'window', t: '창문·선루프·트렁크가 열려 있어요', lv: 'normal' },
+    { k: 'tire', t: '타이어 펑크·바람 빠짐이 보여요', lv: 'info' },
+    { k: 'leak', t: '차 밑으로 액체가 새요', lv: 'normal' },
+    { k: 'alarm', t: '경보기가 계속 울려요', lv: 'normal' }] },
+  { g: '🚓 단속·충전', items: [
+    { k: 'tow', t: '단속·견인 차량이 왔어요', lv: 'normal' },
+    { k: 'fireline', t: '소방차 전용구역·소화전 앞이라 위험해요', lv: 'normal' },
+    { k: 'charge', t: '충전 완료, 충전구역을 비워 주세요', lv: 'normal' }] },
+  { g: '👜 분실물', items: [{ k: 'lost', t: '차 위·옆에 물건을 두고 가셨어요', lv: 'info' }] }
 ];
-const ACC_REPLIES = [
-  { k: 'acc_go', t: '확인했어요, 지금 갈게요', min: 5, icon: '🏃' },
-  { k: 'acc_call', t: '확인했어요, 전화드릴게요', min: 0, icon: '📞' },
-  { k: 'acc_wait', t: '10분 안에 갈게요, 기다려 주세요', min: 10, icon: '⏱️' }
-];
-const REP = k => [...REPLIES, ...ACC_REPLIES].find(r => r.k === k);
-const QUICK = {
-  r: ['어디쯤 오세요?', '천천히 오셔도 괜찮아요', '조금 급해요 🙏', '감사합니다!'],
-  rAcc: ['정말 죄송합니다 🙏', '차 옆에서 기다릴게요', '보험 접수할게요', '사진 더 보내 드릴까요?'],
-  o: ['거의 다 왔어요', '엘리베이터 기다리는 중이에요', '조금만 기다려 주세요 🙏', '차 옮겼어요'],
-  oAcc: ['알려 주셔서 감사해요', '지금 내려가고 있어요', '보험사 연락처 보내 주세요', '잠시만 기다려 주세요']
+const ETC = Object.fromEntries(ETC_GROUPS.flatMap(g => g.items.map(i => [i.k, i])));
+const BB_WHEN = ['방금 전', '1시간 이내', '오늘', '어제', '2~3일 전'];
+const BB_WHAT = ['제 차 사고', '사고 목격', '기타 사건'];
+/* 차주 답장 (종류별) */
+const REPLY_SETS = {
+  move: [
+    { k: 'now', t: '지금 가요', sub: '2분 안에', min: 2, icon: '🏃' },
+    { k: 'soon', t: '곧 갈게요', sub: '5분 안에', min: 5, icon: '🙆' },
+    { k: 'ten', t: '10분 걸려요', sub: '조금만 기다려 주세요', min: 10, icon: '⏱️' },
+    { k: 'neutral', t: '중립이에요, 살살 밀어 주세요', sub: '', min: 0, icon: '🅽' },
+    { k: 'cant', t: '지금은 못 가요', sub: '', min: 0, icon: '🙏', alt: true }],
+  acc: [
+    { k: 'acc_go', t: '확인했어요, 지금 갈게요', min: 5, icon: '🏃' },
+    { k: 'acc_call', t: '확인했어요, 전화드릴게요', min: 0, icon: '📞' },
+    { k: 'acc_wait', t: '10분 안에 갈게요, 기다려 주세요', min: 10, icon: '⏱️' }],
+  bb: [
+    { k: 'bb_check', t: '확인해 볼게요', min: 0, icon: '🔍' },
+    { k: 'bb_send', t: '영상이 있어요, 연락드릴게요', min: 0, icon: '📹' },
+    { k: 'bb_none', t: '그 시간 영상이 없어요', min: 0, icon: '🙏', alt: true }],
+  etcUrgent: [
+    { k: 'etc_go', t: '지금 가 볼게요', min: 5, icon: '🏃' },
+    { k: 'etc_report', t: '신고 부탁드려요 (112·119)', min: 0, icon: '🚨' },
+    { k: 'etc_thx', t: '알려 주셔서 감사해요', min: 0, icon: '🙏', alt: true }],
+  etc: [
+    { k: 'etc_go', t: '지금 가 볼게요', min: 5, icon: '🏃' },
+    { k: 'etc_thx', t: '확인했어요, 감사해요', min: 0, icon: '🙏' },
+    { k: 'etc_known', t: '이미 알고 있어요', min: 0, icon: '👌', alt: true }]
 };
-const STATUS = { ringing: '응답 대기', replied: '답장함', done: '완료', cancelled: '취소' };
+const replySet = r => r.kind === 'etc' ? (r.level === 'urgent' ? REPLY_SETS.etcUrgent : REPLY_SETS.etc)
+  : r.kind === 'move' && r.feedback ? REPLY_SETS.move.filter(x => x.k !== 'neutral') : REPLY_SETS[r.kind] || [];
+const REP = k => Object.values(REPLY_SETS).flat().find(r => r.k === k);
+const FEEDBACK = { pushfail: '밀어봤는데 안 돼요', notneutral: '중립이 아닌 것 같아요', nospace: '밀 공간이 없어요', notyet: '아직 해결되지 않았어요' };
+const THANKS = {
+  move: ['덕분에 잘 나갔어요, 감사합니다 🙏', '빨리 와 주셔서 감사해요', '바쁘신데 고맙습니다'],
+  other: ['확인해 주셔서 감사해요 🙏', '빠르게 답해 주셔서 감사해요', '좋은 하루 보내세요']
+};
+/* 채팅은 골라서 보내는 문구 위주 */
+const QUICK = {
+  r: ['어디쯤 오세요?', '천천히 오셔도 괜찮아요', '조금 급해요 🙏', '차 옆에서 기다릴게요', '해결됐어요, 감사합니다'],
+  rAcc: ['정말 죄송합니다 🙏', '차 옆에서 기다릴게요', '보험 접수할게요', '사진 더 보내 드릴까요?', '연락 기다릴게요'],
+  rBb: ['연락 기다릴게요', '영상 받을 방법을 알려 주세요', '급하지 않아요, 편할 때 확인해 주세요', '감사합니다 🙏'],
+  rEtc: ['확인 부탁드려요', '사진 보내 드릴까요?', '신고했어요', '감사합니다 🙏'],
+  o: ['거의 다 왔어요', '엘리베이터 기다리는 중이에요', '조금만 기다려 주세요 🙏', '차 옮겼어요', '죄송합니다, 금방 갈게요'],
+  oAcc: ['알려 주셔서 감사해요', '지금 내려가고 있어요', '보험사 연락처 보내 주세요', '잠시만 기다려 주세요', '전화드릴게요'],
+  oBb: ['확인해서 연락드릴게요', '전화번호로 연락드릴게요', '영상이 없네요, 죄송해요', '보험사·경찰에 요청해 주세요'],
+  oEtc: ['알려 주셔서 감사해요', '지금 가 볼게요', '이미 알고 있어요', '신고 부탁드려요']
+};
+const quickFor = (r, side) => ({ move: '', acc: 'Acc', bb: 'Bb', etc: 'Etc' }[r.kind] || '');
+const QUICK_OF = (r, side) => QUICK[side + quickFor(r)] || QUICK[side];
+/* 차주 상태 메시지 */
+const STATUS_MSG = {
+  near: '근처에 있어요', far10: '10분 거리에 있어요', meeting: '회의 중이라 확인이 늦을 수 있어요',
+  driving: '운전 중이라 확인이 늦어요', parked: '주차해 두었어요'
+};
+const STATUS = { ringing: '응답 대기', replied: '답장함', resolving: '해결 확인 중', done: '완료', cancelled: '취소' };
 const CALL_LABEL = { safe: '안심번호', real: '내 휴대폰 번호', none: '전화 받지 않음' };
-const headOf = r => r.kind === 'acc' ? `🚨 사고 알림 · ${r.acc?.name || ''}` : `🚗 ${REASONS[r.reason] || '이동 요청'}`;
+const KIND_LABEL = { move: '주차 이동 요청', acc: '사고 알림', bb: '블랙박스 영상 요청', etc: '기타 알림' };
+const locText = l => l ? [l.floor, l.zone].filter(Boolean).join(' ') + (l.memo ? ` (${l.memo})` : '') : '';
+const headOf = r => r.kind === 'acc' ? `🚨 사고 알림 · ${r.acc?.name || ''}`
+  : r.kind === 'bb' ? '📹 블랙박스 영상 요청'
+  : r.kind === 'etc' ? `${r.level === 'urgent' ? '🆘' : '📢'} ${ETC[r.sub]?.t || '기타 알림'}`
+  : `🚗 ${REASONS[r.reason] || '이동 요청'}`;
 
 /* ---------- 로그인(익명) ---------- */
 async function ensureUser() {
@@ -176,15 +236,16 @@ async function savePhotos(r, urls) {
 /* ---------- 메시지 목록 ---------- */
 const nameOf = (sender, r) => sender === 'o' ? '차주' : sender === 'r' ? (r.kind === 'acc' ? '신고자' : '요청자') : '기록';
 function msgHTML(r, msgs, side, photoSrcs) {
-  let first;
-  if (r.kind === 'acc') {
-    const a = r.acc || {};
-    first = { sender: 'r', at: r.created_at, html: `🚨 사고 알림 · ${WHO[a.who] || ''}<br>${esc(a.name)}${a.plate ? ' · ' + esc(a.plate) : ''} · ${esc(a.phone)}${a.desc ? '<br>' + esc(a.desc) : ''}${(photoSrcs || []).length ? '<br>' + photoSrcs.map(p => `<img src="${p}" alt="">`).join('') : ''}` };
-  } else first = { sender: 'r', at: r.created_at, text: `🚗 ${REASONS[r.reason] || ''}${r.msg ? ' · ' + r.msg : ''}` };
-  const items = [first];
+  const a = r.acc || {}, pics = (photoSrcs || []).length ? '<br>' + photoSrcs.map(p => `<img src="${p}" alt="">`).join('') : '';
+  let html;
+  if (r.kind === 'acc') html = `🚨 사고 알림 · ${WHO[r.sub || a.who] || ''}<br>${esc(a.name)}${a.plate ? ' · ' + esc(a.plate) : ''} · ${esc(a.phone)}${a.desc ? '<br>' + esc(a.desc) : ''}`;
+  else if (r.kind === 'bb') html = `📹 블랙박스 영상 요청<br>${esc(a.when || '')} · ${esc(a.what || '')}${a.where ? '<br>장소: ' + esc(a.where) : ''}<br>연락처: ${esc(a.name || '')} ${esc(a.phone || '')}`;
+  else if (r.kind === 'etc') html = `${r.level === 'urgent' ? '🆘' : '📢'} ${esc(ETC[r.sub]?.t || '')}`;
+  else html = `🚗 ${esc(REASONS[r.reason] || '')}${r.loc ? '<br>📍 ' + esc(locText(r.loc)) : ''}${r.msg ? '<br>' + esc(r.msg) : ''}`;
+  const items = [{ sender: 'r', at: r.created_at, html: html + pics }];
   if (r.replied_at && REP(r.reply)) items.push({ sender: 'o', at: r.replied_at, text: `${REP(r.reply).icon} ${REP(r.reply).t}` });
   msgs.forEach(m => items.push({ sender: m.sender, at: m.created_at, text: m.text }));
-  if (r.status === 'done' && r.done_at) items.push({ sender: 'sys', at: r.done_at, text: r.kind === 'acc' ? '✅ 차주가 현장 확인을 마쳤어요' : '✅ 차주가 차를 옮겼어요' });
+  if (r.status === 'done' && r.done_at) items.push({ sender: 'sys', at: r.done_at, text: `✅ 해결 완료${r.resolved_by === 'auto' ? ' (자동 완료)' : r.resolved_by === 'r' ? ' (요청자 확인)' : ''}` });
   if (r.status === 'cancelled') items.push({ sender: 'sys', at: Date.now(), text: '요청이 취소됐어요' });
   items.sort((a, b) => new Date(a.at) - new Date(b.at));
   return items.map(m => {
@@ -195,14 +256,19 @@ function msgHTML(r, msgs, side, photoSrcs) {
 
 /* ---------- 기록 내보내기 ---------- */
 function recordRows(r, plate) {
-  const rows = [['구분', r.kind === 'acc' ? '사고 알림' : '주차 이동 요청'], ['차량', plate || r.car_label || '-'], ['요청 시각', ymdhm(r.created_at)]];
-  if (r.kind === 'acc') {
-    const a = r.acc || {};
-    rows.push(['알린 사람', WHO_LONG[a.who] || '-'], ['이름', a.name || '-'], ['차량번호', a.plate || '-'], ['전화번호', a.phone || '-'], ['사고 내용', a.desc || '-'], ['사진', `${(r.photos || []).length}장`]);
-  } else rows.push(['사유', `${REASONS[r.reason] || '-'}${r.msg ? ' · ' + r.msg : ''}`]);
+  const rows = [['구분', KIND_LABEL[r.kind] || '-'], ['차량', plate || r.car_label || '-'], ['요청 시각', ymdhm(r.created_at)]];
+  const a = r.acc || {};
+  if (r.kind === 'acc') rows.push(['알린 사람', WHO_LONG[r.sub || a.who] || '-'], ['이름', a.name || '-'], ['차량번호', a.plate || '-'], ['전화번호', a.phone || '-'], ['사고 내용', a.desc || '-'], ['사진', `${(r.photos || []).length}장`]);
+  else if (r.kind === 'bb') rows.push(['언제', a.when || '-'], ['무슨 일', a.what || '-'], ['장소', a.where || '-'], ['요청자 연락처', `${a.name || ''} ${a.phone || ''}`.trim() || '-']);
+  else if (r.kind === 'etc') rows.push(['내용', ETC[r.sub]?.t || '-']);
+  else {
+    rows.push(['사유', `${REASONS[r.reason] || '-'}${r.msg ? ' · ' + r.msg : ''}`]);
+    rows.push(['주차위치', r.loc ? locText(r.loc) : '(자동 삭제됨)']);
+  }
   const rp = REP(r.reply);
-  rows.push(['차주 답장', rp ? `${rp.t} (${hhmm(r.replied_at)}, ${secs(new Date(r.replied_at) - new Date(r.created_at))} 만에)` : '없음']);
-  rows.push(['처리 결과', r.status === 'done' ? `완료 (${hhmm(r.done_at)})` : STATUS[r.status] || r.status]);
+  rows.push(['차주 첫 응답', r.replied_at ? `${hhmm(r.replied_at)} (${secs(new Date(r.replied_at) - new Date(r.created_at))} 만에)${rp ? ' · ' + rp.t : ''}` : '없음']);
+  if (r.feedback) rows.push(['요청자 피드백', FEEDBACK[r.feedback] || r.feedback]);
+  rows.push(['처리 결과', r.status === 'done' ? `완료 (${hhmm(r.done_at)}${r.resolved_by === 'auto' ? ', 자동 완료' : r.resolved_by === 'r' ? ', 요청자 확인' : ''})` : STATUS[r.status] || r.status]);
   return rows;
 }
 function chatLines(r, msgs) {
@@ -274,12 +340,15 @@ async function recordPNG(r, msgs, plate, photoBlobs) {
 function recordListHTML(list) {
   if (!list.length) return '<p class="muted center" style="margin-top:30px">아직 기록이 없어요</p>';
   return `<div class="list">${list.map(r => `<button class="li" data-act="rec" data-id="${r.id}">
-    <span class="ic">${r.kind === 'acc' ? '🚨' : '🚗'}</span>
-    <span class="tx"><span class="t">${esc(headOf(r).replace(/^.. /, ''))}</span><span class="s">${ymdhm(r.created_at)}${r.car_label ? ' · ' + esc(r.car_label) : ''}</span></span>
+    <span class="ic">${headOf(r).split(' ')[0]}</span>
+    <span class="tx"><span class="t">${esc(headOf(r).replace(/^\S+ /, ''))}</span><span class="s">${ymdhm(r.created_at)}${r.car_label ? ' · ' + esc(r.car_label) : ''}</span></span>
     <span class="st ${r.status}">${STATUS[r.status] || ''}</span></button>`).join('')}</div>`;
 }
 function recordDetailHTML(r, msgs, side, plate, urls) {
+  const kept = side === 'o' ? r.keep_o : r.keep_r;
   return `
+    <div class="keepbar">${kept ? '⭐ 보관 중 · 자동 삭제되지 않아요' : '🕒 끝난 뒤 30일이 지나면 자동 삭제돼요' + (r.kind === 'move' ? ' (주차위치·사진은 하루 뒤)' : '')}
+      <button class="linkbtn" data-act="keep">${kept ? '보관 해제' : '⭐ 보관하기'}</button></div>
     <div class="info">${recordRows(r, plate).map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
     ${urls.length ? `<div class="thumbs">${urls.map((u, i) => `<img src="${u}" data-act="photo" data-i="${i}" alt="사고 사진 ${i + 1}">`).join('')}</div>
       <button class="btn soft sm" data-act="save-photos">📥 사고 사진 ${urls.length}장 저장</button>` : ''}
@@ -301,3 +370,25 @@ async function exportText(r, msgs, plate) {
   catch (e) { prompt('아래 내용을 길게 눌러 복사하세요', t); }
 }
 const photoOvHTML = (urls, i) => `<div class="photo-ov" data-act="close-photo"><img src="${urls[i]}" alt="사진 크게 보기"><p>사진 ${i + 1}/${urls.length} · 눌러서 닫기</p></div>`;
+
+/* ---------- 채팅 화면 (고르는 문구 위주, 직접 입력은 필요할 때만) ---------- */
+function chatOvHTML(title, sub, phrases, showInput) {
+  return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button>
+      <div><b>${title}</b><div class="muted">${sub}</div></div></div>
+    <div class="msgs" id="chat-msgs"></div>
+    <div class="qgrid">${phrases.map(t => `<button data-act="quick" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+    ${showInput
+      ? `<div class="inputbar"><input id="chat-in" maxlength="200" placeholder="직접 입력" autocomplete="off" enterkeyhint="send"><button data-act="send-msg">전송</button></div>`
+      : `<div class="freetoggle"><button class="linkbtn" data-act="free-input">✏️ 직접 입력하기</button></div>`}
+  </div>`;
+}
+const telBtns = tel => tel ? `<div class="telrow">
+    ${tel === '119' || tel === 'both' ? '<a class="telbtn t119" href="tel:119">🚒 119 신고</a>' : ''}
+    ${tel === '112' || tel === 'both' ? '<a class="telbtn t112" href="tel:112">🚓 112 신고</a>' : ''}</div>` : '';
+/* 출차 예고가 아직 유효한지 (설정 시각 기준 다음 해당 시각 + 30분까지만 보여 줌) */
+function leaveValid(leave, setAt) {
+  if (!leave || !setAt) return false;
+  const base = new Date(setAt), [h, m] = leave.split(':').map(Number), d = new Date(base);
+  d.setHours(h, m, 0, 0); if (d < base) d.setDate(d.getDate() + 1);
+  return Date.now() < d.getTime() + 30 * 60000;
+}
