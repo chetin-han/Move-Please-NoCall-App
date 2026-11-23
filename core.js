@@ -1,4 +1,4 @@
-/* 무브콜 시험판 — 차주 앱·요청자 화면이 함께 쓰는 기능 */
+/* 저기요 시험판 — 차주 앱·요청자 화면이 함께 쓰는 기능 */
 const CFG = window.MOVECALL_CONFIG;
 const sb = window.supabase.createClient(CFG.url, CFG.key, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'movecall-auth' }
@@ -24,6 +24,13 @@ const isStandalone = matchMedia('(display-mode: standalone)').matches || navigat
 const canVib = () => !!navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive);
 const vib = p => { if (canVib()) try { navigator.vibrate(p); } catch (e) { } };
 
+const LOGO = '<img class="logo" src="icons/icon-192.png" alt="">';
+const BRAND = LOGO + '<span class="wm">저기요</span>';
+const clock = ms => { const x = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(x / 60)}:${pad(x % 60)}`; };
+const plateHTML = (t, cls) => `<span class="plate${cls ? ' ' + cls : ''}">${esc(t)}</span>`;
+/* 사람이 한 말은 따옴표로 */
+const sayHTML = (lines, cite, cls) => lines.length ? `<blockquote class="say${cls ? ' ' + cls : ''}">${lines.map(l => '“' + esc(l) + '”').join('<br>')}${cite ? `<cite>${esc(cite)}</cite>` : ''}</blockquote>` : '';
+
 function toast(text, ms = 2600) {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
   document.body.appendChild(t); setTimeout(() => t.remove(), ms);
@@ -36,21 +43,21 @@ const WHO_LONG = { hit: '상대 차량 운전자가 직접 알림', saw: '목격
 const FLOORS = ['B4', 'B3', 'B2', 'B1', '1층', '2층', '3층', '4층 이상', '지상·야외'];
 /* 기타 알림: 긴급은 맨 위. level = urgent(긴급·반복) / normal(반복) / info(가끔 반복) */
 const ETC_GROUPS = [
-  { g: '🆘 긴급 상황', urgent: true, items: [
+  { g: '긴급 상황', urgent: true, items: [
     { k: 'child', t: '차 안에 아이·반려동물이 있어요', lv: 'urgent', tel: '119' },
     { k: 'fire', t: '연기·화재·침수가 보여요', lv: 'urgent', tel: '119' },
     { k: 'theft', t: '도난·파손이 의심돼요', lv: 'urgent', tel: '112' }] },
-  { g: '🚘 차량 상태', items: [
+  { g: '차량 상태', items: [
     { k: 'light', t: '라이트·실내등이 켜져 있어요', lv: 'info' },
     { k: 'window', t: '창문·선루프·트렁크가 열려 있어요', lv: 'normal' },
     { k: 'tire', t: '타이어 펑크·바람 빠짐이 보여요', lv: 'info' },
     { k: 'leak', t: '차 밑으로 액체가 새요', lv: 'normal' },
     { k: 'alarm', t: '경보기가 계속 울려요', lv: 'normal' }] },
-  { g: '🚓 단속·충전', items: [
+  { g: '단속·충전', items: [
     { k: 'tow', t: '단속·견인 차량이 왔어요', lv: 'normal' },
     { k: 'fireline', t: '소방차 전용구역·소화전 앞이라 위험해요', lv: 'normal' },
     { k: 'charge', t: '충전 완료, 충전구역을 비워 주세요', lv: 'normal' }] },
-  { g: '👜 분실물', items: [{ k: 'lost', t: '차 위·옆에 물건을 두고 가셨어요', lv: 'info' }] }
+  { g: '분실물', items: [{ k: 'lost', t: '차 위·옆에 물건을 두고 가셨어요', lv: 'info' }] }
 ];
 const ETC = Object.fromEntries(ETC_GROUPS.flatMap(g => g.items.map(i => [i.k, i])));
 const BB_WHEN = ['방금 전', '1시간 이내', '오늘', '어제', '2~3일 전'];
@@ -58,43 +65,43 @@ const BB_WHAT = ['제 차 사고', '사고 목격', '기타 사건'];
 /* 차주 답장 (종류별) */
 const REPLY_SETS = {
   move: [
-    { k: 'now', t: '지금 가요', sub: '2분 안에', min: 2, icon: '🏃' },
-    { k: 'soon', t: '곧 갈게요', sub: '5분 안에', min: 5, icon: '🙆' },
-    { k: 'ten', t: '10분 걸려요', sub: '조금만 기다려 주세요', min: 10, icon: '⏱️' },
-    { k: 'neutral', t: '중립이에요, 살살 밀어 주세요', sub: '', min: 0, icon: '🅽' },
-    { k: 'cant', t: '지금은 못 가요', sub: '', min: 0, icon: '🙏', alt: true }],
+    { k: 'now', t: '지금 가요', sub: '2분 안에', min: 2, icon: '' },
+    { k: 'soon', t: '곧 갈게요', sub: '5분 안에', min: 5, icon: '' },
+    { k: 'ten', t: '10분 걸려요', sub: '조금만 기다려 주세요', min: 10, icon: '' },
+    { k: 'neutral', t: '중립이에요, 살살 밀어 주세요', sub: '', min: 0, icon: '' },
+    { k: 'cant', t: '지금은 못 가요', sub: '', min: 0, icon: '', alt: true }],
   acc: [
-    { k: 'acc_go', t: '확인했어요, 지금 갈게요', min: 5, icon: '🏃' },
-    { k: 'acc_call', t: '확인했어요, 전화드릴게요', min: 0, icon: '📞' },
-    { k: 'acc_wait', t: '10분 안에 갈게요, 기다려 주세요', min: 10, icon: '⏱️' }],
+    { k: 'acc_go', t: '확인했어요, 지금 갈게요', min: 5, icon: '' },
+    { k: 'acc_call', t: '확인했어요, 전화드릴게요', min: 0, icon: '' },
+    { k: 'acc_wait', t: '10분 안에 갈게요, 기다려 주세요', min: 10, icon: '' }],
   bb: [
-    { k: 'bb_check', t: '확인해 볼게요', min: 0, icon: '🔍' },
-    { k: 'bb_send', t: '영상이 있어요, 연락드릴게요', min: 0, icon: '📹' },
-    { k: 'bb_none', t: '그 시간 영상이 없어요', min: 0, icon: '🙏', alt: true }],
+    { k: 'bb_check', t: '확인해 볼게요', min: 0, icon: '' },
+    { k: 'bb_send', t: '영상이 있어요, 연락드릴게요', min: 0, icon: '' },
+    { k: 'bb_none', t: '그 시간 영상이 없어요', min: 0, icon: '', alt: true }],
   etcUrgent: [
-    { k: 'etc_go', t: '지금 가 볼게요', min: 5, icon: '🏃' },
-    { k: 'etc_report', t: '신고 부탁드려요 (112·119)', min: 0, icon: '🚨' },
-    { k: 'etc_thx', t: '알려 주셔서 감사해요', min: 0, icon: '🙏', alt: true }],
+    { k: 'etc_go', t: '지금 가 볼게요', min: 5, icon: '' },
+    { k: 'etc_report', t: '신고 부탁드려요 (112·119)', min: 0, icon: '' },
+    { k: 'etc_thx', t: '알려 주셔서 감사해요', min: 0, icon: '', alt: true }],
   etc: [
-    { k: 'etc_go', t: '지금 가 볼게요', min: 5, icon: '🏃' },
-    { k: 'etc_thx', t: '확인했어요, 감사해요', min: 0, icon: '🙏' },
-    { k: 'etc_known', t: '이미 알고 있어요', min: 0, icon: '👌', alt: true }]
+    { k: 'etc_go', t: '지금 가 볼게요', min: 5, icon: '' },
+    { k: 'etc_thx', t: '확인했어요, 감사해요', min: 0, icon: '' },
+    { k: 'etc_known', t: '이미 알고 있어요', min: 0, icon: '', alt: true }]
 };
 const replySet = r => r.kind === 'etc' ? (r.level === 'urgent' ? REPLY_SETS.etcUrgent : REPLY_SETS.etc)
   : r.kind === 'move' && r.feedback ? REPLY_SETS.move.filter(x => x.k !== 'neutral') : REPLY_SETS[r.kind] || [];
 const REP = k => Object.values(REPLY_SETS).flat().find(r => r.k === k);
 const FEEDBACK = { pushfail: '밀어봤는데 안 돼요', notneutral: '중립이 아닌 것 같아요', nospace: '밀 공간이 없어요', notyet: '아직 해결되지 않았어요' };
 const THANKS = {
-  move: ['덕분에 잘 나갔어요, 감사합니다 🙏', '빨리 와 주셔서 감사해요', '바쁘신데 고맙습니다'],
-  other: ['확인해 주셔서 감사해요 🙏', '빠르게 답해 주셔서 감사해요', '좋은 하루 보내세요']
+  move: ['덕분에 잘 나갔어요, 감사합니다', '빨리 와 주셔서 감사해요', '바쁘신데 고맙습니다'],
+  other: ['확인해 주셔서 감사해요', '빠르게 답해 주셔서 감사해요', '좋은 하루 보내세요']
 };
 /* 채팅은 골라서 보내는 문구 위주 */
 const QUICK = {
-  r: ['어디쯤 오세요?', '천천히 오셔도 괜찮아요', '조금 급해요 🙏', '차 옆에서 기다릴게요', '해결됐어요, 감사합니다'],
-  rAcc: ['정말 죄송합니다 🙏', '차 옆에서 기다릴게요', '보험 접수할게요', '사진 더 보내 드릴까요?', '연락 기다릴게요'],
-  rBb: ['연락 기다릴게요', '영상 받을 방법을 알려 주세요', '급하지 않아요, 편할 때 확인해 주세요', '감사합니다 🙏'],
-  rEtc: ['확인 부탁드려요', '사진 보내 드릴까요?', '신고했어요', '감사합니다 🙏'],
-  o: ['거의 다 왔어요', '엘리베이터 기다리는 중이에요', '조금만 기다려 주세요 🙏', '차 옮겼어요', '죄송합니다, 금방 갈게요'],
+  r: ['어디쯤 오세요?', '천천히 오셔도 괜찮아요', '조금 급해요', '차 옆에서 기다릴게요', '해결됐어요, 감사합니다'],
+  rAcc: ['정말 죄송합니다', '차 옆에서 기다릴게요', '보험 접수할게요', '사진 더 보내 드릴까요?', '연락 기다릴게요'],
+  rBb: ['연락 기다릴게요', '영상 받을 방법을 알려 주세요', '급하지 않아요, 편할 때 확인해 주세요', '감사합니다'],
+  rEtc: ['확인 부탁드려요', '사진 보내 드릴까요?', '신고했어요', '감사합니다'],
+  o: ['거의 다 왔어요', '엘리베이터 기다리는 중이에요', '조금만 기다려 주세요', '차 옮겼어요', '죄송합니다, 금방 갈게요'],
   oAcc: ['알려 주셔서 감사해요', '지금 내려가고 있어요', '보험사 연락처 보내 주세요', '잠시만 기다려 주세요', '전화드릴게요'],
   oBb: ['확인해서 연락드릴게요', '전화번호로 연락드릴게요', '영상이 없네요, 죄송해요', '보험사·경찰에 요청해 주세요'],
   oEtc: ['알려 주셔서 감사해요', '지금 가 볼게요', '이미 알고 있어요', '신고 부탁드려요']
@@ -109,23 +116,23 @@ function statusText(c) {
   if (!c || !c.status_code || !c.status_at) return '';
   if (c.status_code === 'near') {
     if (Date.now() - new Date(c.status_at) > 12 * 3600e3) return '';   // 12시간 지나면 숨김
-    return `🚶 ${c.status_min || 5}분 거리에 있어요. 연락 주시면 바로 갈게요`;
+    return `${c.status_min || 5}분 거리에 있어요. 연락 주시면 바로 갈게요`;
   }
   if (c.status_code === 'meeting') {
     if (!timeValid(c.status_until, c.status_at, 0)) return '';         // 회의가 끝나면 숨김
-    return `💼 ${koTime(c.status_until)}까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요`;
+    return `${koTime(c.status_until)}까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요`;
   }
   return '';
 }
-const leaveText = c => timeValid(c.leave_at, c.leave_set_at || c.status_at, 30) ? `🕒 ${koTime(c.leave_at)}에 나갈 예정이에요` : '';
+const leaveText = c => timeValid(c.leave_at, c.leave_set_at || c.status_at, 30) ? `${koTime(c.leave_at)}에 나갈 예정이에요` : '';
 const STATUS = { ringing: '응답 대기', replied: '답장함', resolving: '해결 확인 중', done: '완료', cancelled: '취소' };
 const CALL_LABEL = { safe: '안심번호', real: '내 휴대폰 번호', none: '전화 받지 않음' };
 const KIND_LABEL = { move: '주차 이동 요청', acc: '사고 알림', bb: '블랙박스 영상 요청', etc: '기타 알림' };
 const locText = l => l ? [l.floor, l.zone].filter(Boolean).join(' ') + (l.memo ? ` (${l.memo})` : '') : '';
-const headOf = r => r.kind === 'acc' ? `🚨 사고 알림 · ${r.acc?.name || ''}`
-  : r.kind === 'bb' ? '📹 블랙박스 영상 요청'
-  : r.kind === 'etc' ? `${r.level === 'urgent' ? '🆘' : '📢'} ${ETC[r.sub]?.t || '기타 알림'}`
-  : `🚗 ${REASONS[r.reason] || '이동 요청'}`;
+const headOf = r => r.kind === 'acc' ? `사고 알림 ${r.acc?.name || ''}`.trim()
+  : r.kind === 'bb' ? '블랙박스 영상 요청'
+  : r.kind === 'etc' ? (ETC[r.sub]?.t || '기타 알림')
+  : (REASONS[r.reason] || '이동 요청');
 
 /* ---------- 로그인(익명) ---------- */
 async function ensureUser() {
@@ -172,22 +179,24 @@ function qrSVG(text, cls) {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
   return `<svg class="${cls || 'qr'}" viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#111"/></svg>`;
 }
-const stickerHTML = url => `<div class="stk"><div class="stk-top"><span class="logo">P</span>무브콜</div>${qrSVG(url, 'qrbig')}<div class="stk-t">주차 이동 · 사고 알림</div><div class="stk-s">휴대폰 카메라로 QR을 찍어 주세요<br>전화번호 없이 차주에게 바로 연락돼요</div></div>`;
+const stickerHTML = url => `<div class="stk"><div class="stk-top">${BRAND}</div>${qrSVG(url, 'qrbig')}<div class="stk-s">QR을 찍으면 차주에게 바로 연락돼요<br>전화번호는 서로 보이지 않습니다</div></div>`;
 async function stickerBlob(url) {
   const W = 600, H = 860, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
   const rr = (x, y, w, h, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); };
   const F = 'Pretendard, "Malgun Gothic", sans-serif';
-  g.fillStyle = '#2f6bff'; rr(0, 0, W, H, 48); g.fill();
+  try { await document.fonts.load('400 76px Gaegu', '저기요'); } catch (e) { }
+  const logo = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = 'icons/icon-512.png'; });
+  g.fillStyle = '#1B6B4E'; rr(0, 0, W, H, 48); g.fill();
   g.fillStyle = '#fff'; rr(24, 24, W - 48, H - 48, 32); g.fill();
-  g.fillStyle = '#2f6bff'; rr(196, 64, 56, 56, 14); g.fill();
-  g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.font = `800 32px ${F}`; g.textAlign = 'center'; g.fillText('P', 224, 93);
-  g.fillStyle = '#16181d'; g.textAlign = 'left'; g.font = `800 38px ${F}`; g.fillText('무브콜', 266, 94);
-  const q = qrMake(url), n = q.getModuleCount(), size = 420, cell = size / n, qx = (W - size) / 2, qy = 150;
+  g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#1C211F'; g.font = `400 76px Gaegu, ${F}`;
+  const tw = g.measureText('저기요').width, lx = (W - (84 + 18 + tw)) / 2;
+  if (logo) g.drawImage(logo, lx, 58, 84, 84);
+  g.fillText('저기요', lx + 102, 102);
+  const q = qrMake(url), n = q.getModuleCount(), size = 420, cell = size / n, qx = (W - size) / 2, qy = 176;
   g.fillStyle = '#111';
   for (let r = 0; r < n; r++) for (let cc = 0; cc < n; cc++) if (q.isDark(r, cc)) g.fillRect(qx + cc * cell, qy + r * cell, Math.ceil(cell), Math.ceil(cell));
-  g.textAlign = 'center'; g.fillStyle = '#16181d'; g.font = `800 42px ${F}`; g.fillText('주차 이동 · 사고 알림', W / 2, 640);
-  g.fillStyle = '#6b7280'; g.font = `500 26px ${F}`;
-  g.fillText('휴대폰 카메라로 QR을 찍어 주세요', W / 2, 700); g.fillText('전화번호 없이 차주에게 바로 연락돼요', W / 2, 742);
+  g.textAlign = 'center'; g.fillStyle = '#1C211F'; g.font = `800 30px ${F}`; g.fillText('QR을 찍으면 차주에게 바로 연락돼요', W / 2, 668);
+  g.fillStyle = '#68716C'; g.font = `500 26px ${F}`; g.fillText('전화번호는 서로 보이지 않습니다', W / 2, 718);
   return await new Promise(res => c.toBlob(res, 'image/png'));
 }
 
@@ -240,7 +249,7 @@ const stamp = d => { d = new Date(d); return `${d.getFullYear()}${pad(d.getMonth
 async function savePhotos(r, urls) {
   const blobs = await fetchBlobs(urls);
   if (!blobs.length) { toast('사진을 불러오지 못했어요'); return; }
-  const files = blobs.map((b, i) => new File([b], `무브콜_사고사진_${stamp(r.created_at)}_${i + 1}.jpg`, { type: b.type || 'image/jpeg' }));
+  const files = blobs.map((b, i) => new File([b], `저기요_사고사진_${stamp(r.created_at)}_${i + 1}.jpg`, { type: b.type || 'image/jpeg' }));
   const res = await saveFiles(files);
   if (res === 'downloaded') toast(`사진 ${files.length}장을 저장했어요`);
 }
@@ -250,14 +259,14 @@ const nameOf = (sender, r) => sender === 'o' ? '차주' : sender === 'r' ? (r.ki
 function msgHTML(r, msgs, side, photoSrcs) {
   const a = r.acc || {}, pics = (photoSrcs || []).length ? '<br>' + photoSrcs.map(p => `<img src="${p}" alt="">`).join('') : '';
   let html;
-  if (r.kind === 'acc') html = `🚨 사고 알림 · ${WHO[r.sub || a.who] || ''}<br>${esc(a.name)}${a.plate ? ' · ' + esc(a.plate) : ''} · ${esc(a.phone)}${a.desc ? '<br>' + esc(a.desc) : ''}`;
-  else if (r.kind === 'bb') html = `📹 블랙박스 영상 요청<br>${esc(a.when || '')} · ${esc(a.what || '')}${a.where ? '<br>장소: ' + esc(a.where) : ''}<br>연락처: ${esc(a.name || '')} ${esc(a.phone || '')}`;
-  else if (r.kind === 'etc') html = `${r.level === 'urgent' ? '🆘' : '📢'} ${esc(ETC[r.sub]?.t || '')}`;
-  else html = `🚗 ${esc(REASONS[r.reason] || '')}${r.loc ? '<br>📍 ' + esc(locText(r.loc)) : ''}${r.msg ? '<br>' + esc(r.msg) : ''}`;
+  if (r.kind === 'acc') html = `사고 알림: ${WHO[r.sub || a.who] || ''}<br>${esc(a.name)}${a.plate ? ' ' + esc(a.plate) : ''} ${esc(a.phone)}${a.desc ? '<br>' + esc(a.desc) : ''}`;
+  else if (r.kind === 'bb') html = `블랙박스 영상 요청<br>${esc(a.when || '')}, ${esc(a.what || '')}${a.where ? '<br>장소: ' + esc(a.where) : ''}<br>연락처: ${esc(a.name || '')} ${esc(a.phone || '')}`;
+  else if (r.kind === 'etc') html = esc(ETC[r.sub]?.t || '');
+  else html = `${esc(REASONS[r.reason] || '')}${r.loc ? '<br>' + esc(locText(r.loc)) : ''}${r.msg ? '<br>' + esc(r.msg) : ''}`;
   const items = [{ sender: 'r', at: r.created_at, html: html + pics }];
-  if (r.replied_at && REP(r.reply)) items.push({ sender: 'o', at: r.replied_at, text: `${REP(r.reply).icon} ${REP(r.reply).t}` });
+  if (r.replied_at && REP(r.reply)) items.push({ sender: 'o', at: r.replied_at, text: REP(r.reply).t });
   msgs.forEach(m => items.push({ sender: m.sender, at: m.created_at, text: m.text }));
-  if (r.status === 'done' && r.done_at) items.push({ sender: 'sys', at: r.done_at, text: `✅ 해결 완료${r.resolved_by === 'auto' ? ' (자동 완료)' : r.resolved_by === 'r' ? ' (요청자 확인)' : ''}` });
+  if (r.status === 'done' && r.done_at) items.push({ sender: 'sys', at: r.done_at, text: `해결 완료${r.resolved_by === 'auto' ? ' (자동 완료)' : r.resolved_by === 'r' ? ' (요청자 확인)' : ''}` });
   if (r.status === 'cancelled') items.push({ sender: 'sys', at: Date.now(), text: '요청이 취소됐어요' });
   items.sort((a, b) => new Date(a.at) - new Date(b.at));
   return items.map(m => {
@@ -289,7 +298,7 @@ function chatLines(r, msgs) {
 function recordText(r, msgs, plate) {
   const rows = recordRows(r, plate).map(([k, v]) => `${k}: ${v}`).join('\n');
   const chat = chatLines(r, msgs);
-  return `[무브콜 ${r.kind === 'acc' ? '사고 기록' : '주차 이동 요청 기록'}]\n${rows}${chat.length ? '\n\n[대화 기록]\n' + chat.join('\n') : ''}\n\n기록 번호 ${r.id.slice(0, 8)} · 무브콜 시험판에서 내보냄 ${ymdhm(Date.now())}`;
+  return `[저기요 ${r.kind === 'acc' ? '사고 기록' : '주차 이동 요청 기록'}]\n${rows}${chat.length ? '\n\n[대화 기록]\n' + chat.join('\n') : ''}\n\n기록 번호 ${r.id.slice(0, 8)} · 저기요 시험판에서 내보냄 ${ymdhm(Date.now())}`;
 }
 async function recordPNG(r, msgs, plate, photoBlobs) {
   const W = 1000, P = 56, F = 'Pretendard, "Malgun Gothic", sans-serif';
@@ -309,8 +318,8 @@ async function recordPNG(r, msgs, plate, photoBlobs) {
   const draw = dry => {
     let y = P; g.textBaseline = 'top';
     const T = (txt, font, color, x, yy) => { if (!dry) { g.font = font; g.fillStyle = color; g.fillText(txt, x, yy); } };
-    if (!dry) { g.fillStyle = '#fff'; g.fillRect(0, 0, W, c.height); g.fillStyle = r.kind === 'acc' ? '#e5484d' : '#2f6bff'; g.fillRect(0, 0, W, 14); }
-    T(r.kind === 'acc' ? '무브콜 사고 기록' : '무브콜 주차 이동 요청 기록', `800 40px ${F}`, '#16181d', P, y + 10); y += 74;
+    if (!dry) { g.fillStyle = '#fff'; g.fillRect(0, 0, W, c.height); g.fillStyle = r.kind === 'acc' ? '#D43A2F' : '#1B6B4E'; g.fillRect(0, 0, W, 14); }
+    T(r.kind === 'acc' ? '저기요 사고 기록' : '저기요 주차 이동 요청 기록', `800 40px ${F}`, '#16181d', P, y + 10); y += 74;
     T(`기록 번호 ${r.id.slice(0, 8)} · ${ymdhm(r.created_at)}`, `500 22px ${F}`, '#6b7280', P, y); y += 48;
     const labW = 200, valW = W - 2 * P - labW - 32;
     for (const [k, v] of rows) {
@@ -340,7 +349,7 @@ async function recordPNG(r, msgs, plate, photoBlobs) {
       }
       y += 10;
     }
-    T(`무브콜 시험판에서 내보냄 · ${ymdhm(Date.now())}`, `500 20px ${F}`, '#9ca3af', P, y); y += 40;
+    T(`저기요 시험판에서 내보냄 · ${ymdhm(Date.now())}`, `500 20px ${F}`, '#9ca3af', P, y); y += 40;
     return y;
   };
   c.width = W; c.height = 6000; const H = draw(true);
@@ -350,30 +359,30 @@ async function recordPNG(r, msgs, plate, photoBlobs) {
 
 /* ---------- 기록 목록·상세 (두 화면 공통) ---------- */
 function recordListHTML(list) {
-  if (!list.length) return '<p class="muted center" style="margin-top:30px">아직 기록이 없어요</p>';
+  if (!list.length) return '<p class="lead">아직 기록이 없어요</p>';
   return `<div class="list">${list.map(r => `<button class="li" data-act="rec" data-id="${r.id}">
-    <span class="ic">${headOf(r).split(' ')[0]}</span>
-    <span class="tx"><span class="t">${esc(headOf(r).replace(/^\S+ /, ''))}</span><span class="s">${ymdhm(r.created_at)}${r.car_label ? ' · ' + esc(r.car_label) : ''}</span></span>
+    <span class="kd ${r.kind}${r.level === 'urgent' ? ' urgent' : ''}"></span>
+    <span class="tx"><span class="t">${esc(headOf(r))}</span><span class="s">${ymdhm(r.created_at)}${r.car_label ? ' ' + esc(r.car_label) : ''}</span></span>
     <span class="st ${r.status}">${STATUS[r.status] || ''}</span></button>`).join('')}</div>`;
 }
 function recordDetailHTML(r, msgs, side, plate, urls) {
   const kept = side === 'o' ? r.keep_o : r.keep_r;
   return `
-    <div class="keepbar">${kept ? '⭐ 보관 중 · 자동 삭제되지 않아요' : '🕒 끝난 뒤 30일이 지나면 자동 삭제돼요' + (r.kind === 'move' ? ' (주차위치·사진은 하루 뒤)' : '')}
-      <button class="linkbtn" data-act="keep">${kept ? '보관 해제' : '⭐ 보관하기'}</button></div>
+    <div class="keepbar">${kept ? '보관 중 · 자동 삭제되지 않아요' : '끝난 뒤 30일이 지나면 자동 삭제돼요' + (r.kind === 'move' ? ' (주차위치·사진은 하루 뒤)' : '')}
+      <button class="linkbtn" data-act="keep">${kept ? '보관 해제' : '보관하기'}</button></div>
     <div class="info">${recordRows(r, plate).map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
     ${urls.length ? `<div class="thumbs">${urls.map((u, i) => `<img src="${u}" data-act="photo" data-i="${i}" alt="사고 사진 ${i + 1}">`).join('')}</div>
-      <button class="btn soft sm" data-act="save-photos">📥 사고 사진 ${urls.length}장 저장</button>` : ''}
+      <button class="btn soft sm" data-act="save-photos">사고 사진 ${urls.length}장 저장</button>` : ''}
     <div class="h">대화 기록</div>
     <div class="msgs static">${msgHTML(r, msgs, side, [])}</div>
-    <button class="btn primary" data-act="export-png">🖼 기록을 이미지로 저장</button>
-    <button class="btn ghost" data-act="export-text">📋 기록 텍스트 복사</button>`;
+    <button class="btn primary" data-act="export-png">기록을 이미지로 저장</button>
+    <button class="btn ghost" data-act="export-text">기록 텍스트 복사</button>`;
 }
 async function exportPNG(r, msgs, plate, urls) {
   toast('기록 이미지를 만들고 있어요…', 1500);
   const blobs = await fetchBlobs(urls);
   const png = await recordPNG(r, msgs, plate, blobs);
-  const res = await saveFiles([new File([png], `무브콜_${r.kind === 'acc' ? '사고기록' : '이동요청기록'}_${stamp(r.created_at)}.png`, { type: 'image/png' })]);
+  const res = await saveFiles([new File([png], `저기요_${r.kind === 'acc' ? '사고기록' : '이동요청기록'}_${stamp(r.created_at)}.png`, { type: 'image/png' })]);
   if (res === 'downloaded') toast('기록 이미지를 저장했어요');
 }
 async function exportText(r, msgs, plate) {
@@ -391,12 +400,12 @@ function chatOvHTML(title, sub, phrases, showInput) {
     <div class="qgrid">${phrases.map(t => `<button data-act="quick" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>
     ${showInput
       ? `<div class="inputbar"><input id="chat-in" maxlength="200" placeholder="직접 입력" autocomplete="off" enterkeyhint="send"><button data-act="send-msg">전송</button></div>`
-      : `<div class="freetoggle"><button class="linkbtn" data-act="free-input">✏️ 직접 입력하기</button></div>`}
+      : `<div class="freetoggle"><button class="linkbtn" data-act="free-input">직접 입력하기</button></div>`}
   </div>`;
 }
 const telBtns = tel => tel ? `<div class="telrow">
-    ${tel === '119' || tel === 'both' ? '<a class="telbtn t119" href="tel:119">🚒 119 신고</a>' : ''}
-    ${tel === '112' || tel === 'both' ? '<a class="telbtn t112" href="tel:112">🚓 112 신고</a>' : ''}</div>` : '';
+    ${tel === '119' || tel === 'both' ? '<a class="telbtn t119" href="tel:119">119 신고</a>' : ''}
+    ${tel === '112' || tel === 'both' ? '<a class="telbtn t112" href="tel:112">112 신고</a>' : ''}</div>` : '';
 /* '○시' 같은 시각이 아직 지나지 않았는지 (설정 시각 이후 처음 오는 그 시각 + 여유 분) */
 function timeValid(t, setAt, graceMin) {
   if (!t || !setAt) return false;

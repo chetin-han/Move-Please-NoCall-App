@@ -1,4 +1,4 @@
-/* 무브콜 시험판 — 차주 앱 (가입 · 대기 · 상태 알리기 · 요청 응답 · 메시지 · 기록) */
+/* 저기요 시험판 — 차주 앱 (가입 · 대기 · 상태 알리기 · 요청 응답 · 메시지 · 기록) */
 const params = new URLSearchParams(location.search);
 const APP = $('#app'), OV = $('#ov');
 let me = null, car = null, active = null, aMsgs = [], aUrls = [], unread = 0;
@@ -9,9 +9,9 @@ let su = null, sd = null, lastBuzz = 0, pState = 'unsupported', deferredInstall 
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (!car) render(); });
 
 const pushWhy = w => ({
-  denied: '알림이 차단돼 있어요. 폰 설정 → 앱(크롬 또는 무브콜) → 알림에서 허용해 주세요.',
+  denied: '알림이 차단돼 있어요. 폰 설정 → 앱(크롬 또는 저기요) → 알림에서 허용해 주세요.',
   default: '알림 허용 창에서 "허용"을 눌러 주세요.',
-  'ios-not-installed': '아이폰은 홈 화면에 추가한 무브콜 앱에서만 알림을 켤 수 있어요.',
+  'ios-not-installed': '아이폰은 홈 화면에 추가한 저기요 앱에서만 알림을 켤 수 있어요.',
   unsupported: '이 브라우저는 폰 알림을 지원하지 않아요. 크롬(안드로이드) 또는 홈 화면에 추가한 앱(아이폰)으로 열어 주세요.'
 })[w] || ('알림을 켜지 못했어요: ' + w);
 const OPEN = ['ringing', 'replied', 'resolving'];
@@ -74,7 +74,7 @@ function subscribe() {
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => {
       const m = p.new;
-      if (m.sender === 'r' && m.text.startsWith('💐') && (!active || m.request_id !== active.id)) { toast('감사 인사가 도착했어요: ' + m.text, 4000); vib([200]); }
+      if (m.sender === 'r' && m.text.startsWith('감사 인사: ') && (!active || m.request_id !== active.id)) { toast('감사 인사가 도착했어요: ' + m.text, 4000); vib([200]); }
       if (active && m.request_id === active.id && !aMsgs.some(x => x.id === m.id)) {
         aMsgs.push(m);
         if (m.sender === 'r') { if (ov !== 'chat') unread++; vib([200]); }
@@ -97,116 +97,114 @@ async function handleParams() {
 }
 
 /* ---------- 화면 ---------- */
-const OTOP = `<div class="o-top"><div class="o-date" id="o-date"></div><div class="o-clock" id="o-clock"></div></div>`;
-const NH = t => `<div class="noti-h"><span class="logo">P</span>무브콜${t ? ' · ' + t : ''}<span class="now">지금</span></div>`;
+const OBAR = right => `<div class="appbar">${BRAND}${right || ''}</div>`;
 const who = () => active.kind === 'move' ? '요청자' : active.kind === 'bb' ? '요청자' : active.kind === 'acc' ? '신고자' : '알린 분';
 const whoWith = () => who() + (who().endsWith('분') ? '과' : '와');
-const chatBtn = () => `<button class="btn soft" data-act="chat">💬 ${whoWith()} 메시지<span class="unread" id="o-unread" hidden></span></button><div class="lastmsg" id="o-last"></div>`;
+const chatBtn = () => `<div class="links"><button data-act="chat">${whoWith()} 메시지<span class="unread" id="o-unread" hidden></span></button></div><div class="lastmsg" id="o-last"></div>`;
 const carUrl = () => new URL('c.html?id=' + car.id, location.href).href;
-const fbBanner = () => active.feedback ? `<div class="fbanner">⚠ 요청자: “${FEEDBACK[active.feedback]}”${active.feedback === 'notyet' ? '' : '<br>직접 와 주셔야 해요'}</div>` : '';
+const fbBanner = () => active.feedback ? `<div class="fbanner">요청자: “${FEEDBACK[active.feedback]}”${active.feedback === 'notyet' ? '' : '<br>직접 와 주셔야 해요'}</div>` : '';
 function detailCard(r, urls) {
-  const a = r.acc || {};
-  if (r.kind === 'acc') return `<span class="reason">${WHO[r.sub || a.who] || ''} · ${WHO_LONG[r.sub || a.who] || ''}</span>
+  const a = r.acc || {}, tel = String(a.phone || '').replace(/\D/g, '');
+  if (r.kind === 'acc') return `<span class="reason">${WHO[r.sub || a.who] || ''}</span>
     <div class="info">
       <div><span>이름</span><b>${esc(a.name)}</b></div>
       <div><span>차량번호</span><b>${a.plate ? esc(a.plate) : '-'}</b></div>
-      <div><span>전화번호</span><a href="tel:${esc(String(a.phone || '').replace(/\D/g, ''))}" data-act="log-call">${esc(a.phone)} 📞</a></div>
+      <div><span>전화번호</span><a href="tel:${esc(tel)}" data-act="log-call">${esc(a.phone)}</a></div>
     </div>
     ${a.desc ? `<div class="quote">“${esc(a.desc)}”</div>` : ''}
     ${urls.length ? `<div class="thumbs">${urls.map((u, i) => `<img src="${u}" data-act="photo" data-i="${i}" alt="사고 사진 ${i + 1}">`).join('')}</div>
-      <button class="btn soft sm" data-act="save-photos">📥 사고 사진 ${urls.length}장 저장</button>` : '<p class="muted" style="margin-top:8px">첨부 사진 없음</p>'}`;
-  if (r.kind === 'bb') return `<span class="reason" style="background:var(--accent-soft);color:var(--accent)">📹 블랙박스 영상 요청</span>
-    <div class="info">
+      <button class="btn soft sm" data-act="save-photos">사고 사진 ${urls.length}장 저장</button>` : ''}`;
+  if (r.kind === 'bb') return `<div class="info">
       <div><span>언제</span><b>${esc(a.when || '-')}</b></div>
       <div><span>무슨 일</span><b>${esc(a.what || '-')}</b></div>
       ${a.where ? `<div><span>장소</span><b>${esc(a.where)}</b></div>` : ''}
-      <div><span>연락처</span><a href="tel:${esc(String(a.phone || '').replace(/\D/g, ''))}" data-act="log-call">${esc(a.name || '')} ${esc(a.phone)} 📞</a></div>
+      <div><span>연락처</span><a href="tel:${esc(tel)}" data-act="log-call">${esc(a.name || '')} ${esc(a.phone)}</a></div>
     </div>`;
-  if (r.kind === 'etc') return `<span class="reason"${r.level === 'urgent' ? '' : ' style="background:var(--accent-soft);color:var(--accent)"'}>${r.level === 'urgent' ? '🆘 긴급' : '📢 알림'}</span>
-    <div class="quote" style="font-weight:700">${esc(ETC[r.sub]?.t || '')}</div>`;
-  return `<span class="reason">${esc(REASONS[r.reason] || '')}</span>
-    ${r.loc ? `<div class="quote">📍 요청자 위치: <b>${esc(locText(r.loc))}</b></div>` : ''}
+  if (r.kind === 'etc') return '';
+  /* 이동 요청: 주차 위치를 기둥 표지처럼 가장 크게 */
+  return `${r.loc ? `<span class="sign"><b>${esc(r.loc.floor || '')}</b>${esc(r.loc.zone || '')}</span>${r.loc.memo ? `<p class="lead">${esc(r.loc.memo)}</p>` : ''}` : ''}
+    <span class="reason">${esc(REASONS[r.reason] || '')}</span>
     ${r.msg ? `<div class="quote">“${esc(r.msg)}”</div>` : ''}
     ${urls.length ? `<div class="thumbs">${urls.map((u, i) => `<img src="${u}" data-act="photo" data-i="${i}" alt="현장 사진">`).join('')}</div>` : ''}`;
 }
-const replyBtns = r => `<div class="replies${r.kind === 'move' && !r.feedback ? '' : ' col'}">${replySet(r).map(x => `<button class="rp${x.alt ? ' alt' : ''}${r.level === 'urgent' && !x.alt ? ' red' : ''}" data-act="reply" data-k="${x.k}">${x.icon} ${x.t}${x.sub ? `<small>${x.sub}</small>` : ''}</button>`).join('')}</div>`;
-const statusLine = () => { const t = [statusText(car), leaveText(car)].filter(Boolean); return t.length ? t.map(esc).join('<br>') : '💬 남긴 말 없음 · 남겨 두면 요청자가 편하게 연락해요'; };
+const replyBtns = r => `<div class="replies">${replySet(r).map(x => `<button class="rp${x.alt ? ' alt' : ''}" data-act="reply" data-k="${x.k}">${x.t}${x.min && !x.t.includes('분') ? `<em>${x.min}분</em>` : ''}</button>`).join('')}</div>`;
+const statusLines = () => [statusText(car), leaveText(car)].filter(Boolean);
 
 const W = {
   welcome: () => `<div class="welcome">
-      <span class="logo big">P</span>
-      <h2>무브콜</h2>
+      <img class="logo big" src="icons/icon-512.png" alt="">
+      <h1 class="wm big">저기요<small>가칭</small></h1>
       <p class="lead">QR 스티커 하나로<br>주차 이동 요청과 사고 알림을 받아요</p>
       <ul>
-        <li>📳 요청이 오면 답할 때까지 알림이 반복돼요 — 회의 중엔 진동으로</li>
-        <li>🛡 내 번호를 드러내지 않고 연락받아요</li>
-        <li>🚨 사고·긴급 상황은 상대 연락처·사진과 함께 긴급 알림</li>
+        <li>답할 때까지 알림이 반복돼요</li>
+        <li>내 번호를 드러내지 않고 연락받아요</li>
+        <li>사고와 긴급 상황은 더 강하게 알려요</li>
       </ul>
-      ${isIOS && !isStandalone ? `<div class="tipbox">📱 <b>아이폰은 먼저 앱으로 설치해 주세요.</b><br>Safari 아래쪽 <b>공유 버튼(□↑) → 홈 화면에 추가</b>를 누른 뒤, 홈 화면의 무브콜 아이콘으로 열어서 가입하세요.</div>` : ''}
-      ${deferredInstall ? '<button class="btn ghost" data-act="install">📲 홈 화면에 앱으로 설치</button>' : ''}
-      ${!isIOS && !isStandalone && !deferredInstall ? '<div class="tipbox">📲 크롬 메뉴(⋮) → <b>홈 화면에 추가</b>로 설치해 두면 앱처럼 쓸 수 있어요.</div>' : ''}
+      ${isIOS && !isStandalone ? `<div class="tipbox"><b>아이폰은 먼저 홈 화면에 추가해 주세요.</b><br>Safari 아래쪽 공유 버튼(□↑) → 홈 화면에 추가 → 홈 화면의 저기요 아이콘으로 열어서 가입하세요.</div>` : ''}
+      ${!isIOS && !isStandalone && !deferredInstall ? '<div class="tipbox">크롬 메뉴(⋮) → 홈 화면에 추가로 설치하면 앱처럼 쓸 수 있어요.</div>' : ''}
       <div class="spacer"></div>
+      ${deferredInstall ? '<button class="btn ghost" data-act="install">홈 화면에 설치</button>' : ''}
       <button class="btn primary" data-act="signup">가입하기</button>
-      <p style="margin-top:10px;opacity:.6;font-size:12px">시험판 · 입력한 정보는 시험이 끝나면 삭제돼요</p>
+      <p class="fine">시험판입니다. 입력한 정보는 시험이 끝나면 삭제돼요.</p>
     </div>`,
 
-  idle: () => `${OTOP}
-    <div class="widget"><b>무브콜 · 대기 중</b><br>내 차 ${esc(car.plate)} (${esc(car.color)} ${esc(car.kind)})
-      <div class="numrow"><span>${statusLine()}</span><button data-act="open-status">바꾸기</button></div>
-      <div class="numrow">📞 ${CALL_LABEL[car.call_type]}${car.call_type === 'none' ? '' : ' · ' + esc(car.phone)}<button data-act="open-set">변경</button></div>
-      ${pState === 'on' ? '' : `<div class="warnline">⚠ 폰 알림이 꺼져 있어요. 이 화면을 닫으면 요청을 못 받아요. <button class="linkbtn" data-act="enable-push">알림 켜기</button></div>`}
-      <div class="row2"><button data-act="sticker">🔲 내 QR</button><button data-act="records">🗂 기록</button><button data-act="test-push">📳 알림 시험</button></div>
-    </div>
-    <div class="o-foot">${isIOS ? '아이폰은 폰 알림으로 진동해요' : '이 화면이 켜져 있을 때는 화면에서도 진동해요 (화면을 한 번 눌러 두세요)'}<br>
-      <button class="linkbtn" data-act="leave">가입 해지 · 시험 데이터 삭제</button></div>`,
+  idle: () => {
+    const said = statusLines();
+    return `${OBAR('<button class="linkbtn" data-act="records">기록</button>')}
+      <div class="carline" style="margin-top:14px">${plateHTML(car.plate, 'mid')}<span>${esc(car.color)} ${esc(car.kind)}</span></div>
+      <h2 class="big">요청을 기다리고 있어요</h2>
+      ${pState === 'on' ? '' : `<div class="hint">폰 알림이 꺼져 있어요. 이 화면을 닫으면 요청을 못 받아요. <button class="linkbtn" data-act="enable-push">알림 켜기</button></div>`}
+      <div class="setrow" style="margin-top:22px"><div><span class="k">요청자에게 남긴 말</span><span class="v${said.length ? ' voice' : ''}">${said.length ? said.map(t => '“' + esc(t) + '”').join('<br>') : '없음'}</span></div><button data-act="open-status">바꾸기</button></div>
+      <div class="setrow"><div><span class="k">전화</span><span class="v">${CALL_LABEL[car.call_type]}${car.call_type === 'none' ? '' : ' ' + esc(car.phone)}</span></div><button data-act="open-set">바꾸기</button></div>
+      <div class="spacer"></div>
+      <button class="btn primary" data-act="sticker">내 QR 스티커</button>
+      <button class="btn ghost" data-act="test-push">알림 시험</button>
+      <p class="fine"><button class="linkbtn" data-act="leave">가입 해지 (시험 데이터 삭제)</button></p>`;
+  },
 
+  /* 요청 받음: 화면 전체가 초록(긴급은 빨강)으로 바뀜 */
   ring: () => {
     const u = active.level === 'urgent';
-    const title = { move: active.feedback ? '🚗 직접 와 주셔야 해요' : '🚗 차를 빼 주실 수 있나요?', acc: '🚨 내 차 사고 알림', bb: '📹 블랙박스 영상 요청', etc: u ? '🆘 긴급 알림' : '📢 내 차 알림' }[active.kind];
-    return `${u ? `<div class="al-top"><div class="al-ic">${active.kind === 'acc' ? '🚨' : '🆘'}</div><div class="al-t">긴급 · ${active.kind === 'acc' ? '내 차 사고 알림' : esc(ETC[active.sub]?.t || '')}</div>
-        <div class="al-s">${esc(car.plate)} · 알림 후 <span id="o-el">0초</span> · 확인할 때까지 계속</div></div>` : OTOP}
-      <div class="noti">
-        ${NH(u ? '긴급 알림' : KIND_LABEL[active.kind])}
-        ${u ? '' : `<div class="noti-t">${title}</div>`}
-        ${fbBanner()}
-        ${detailCard(active, aUrls)}
-        <div id="o-extra"></div>
-        ${u ? '' : `<div class="vib">📳 알림 후 <span id="o-el">0초</span> · 답할 때까지 ${active.level === 'info' ? '가끔' : '계속'} 울려요</div>`}
-        ${replyBtns(active)}
-        ${chatBtn()}
-      </div>`;
+    const title = { move: active.feedback ? '직접 와 주셔야 해요' : '차를 빼 주실 수 있나요', acc: '내 차 사고 알림', bb: '블랙박스 영상 요청', etc: ETC[active.sub]?.t || '내 차 알림' }[active.kind];
+    return `${OBAR('<span class="el" id="o-el">0:00</span>')}
+      ${u ? '<p class="kicker">긴급</p>' : ''}
+      <h2 class="big">${esc(title)}</h2>
+      ${fbBanner()}
+      ${detailCard(active, aUrls)}
+      <div id="o-extra"></div>
+      <div class="spacer"></div>
+      ${replyBtns(active)}
+      ${chatBtn()}`;
   },
 
   replied: () => {
-    const rp = REP(active.reply) || { icon: '💬', t: '', min: 0 };
-    return `${active.kind === 'acc' ? '' : OTOP}
-    <div class="noti"${active.kind === 'acc' ? ' style="margin-top:4px"' : ''}>
-      ${NH(KIND_LABEL[active.kind])}
-      <div class="noti-t">답장을 보냈어요</div>
-      <div class="sent" style="font-size:17px">${rp.icon} “${rp.t}”</div>
-      ${active.reply === 'neutral' ? '<p class="muted" style="margin-top:4px">요청자가 밀어 본 뒤 결과를 알려 줄 거예요</p>' : ''}
-      ${rp.min ? `<p class="muted" style="margin-top:4px">요청자에게 보여 주는 남은 시간</p><div class="cd small" id="o-cd">--:--</div>` : ''}
+    const rp = REP(active.reply) || { t: '', min: 0 };
+    return `${OBAR()}
+      <p class="kicker">${KIND_LABEL[active.kind]}</p>
+      <h2 class="big">답장을 보냈어요</h2>
+      ${sayHTML([rp.t])}
+      ${active.reply === 'neutral' ? '<p class="lead">요청자가 밀어 본 뒤 결과를 알려 줄 거예요.</p>' : ''}
+      ${rp.min ? `<div class="clock" id="o-cd">--:--</div><p class="lead">요청자에게 보이는 남은 시간</p>` : ''}
       ${active.kind === 'move' ? '' : detailCard(active, aUrls)}
+      <div class="spacer"></div>
       ${chatBtn()}
-      <button class="btn primary" data-act="resolve-req">✅ 해결 완료</button>
-      <p class="muted center" style="font-size:12px;margin-top:6px">요청자가 확인하면 끝나요 · 답이 없으면 5분 뒤 자동 완료</p>
-    </div>`;
+      <button class="btn primary" data-act="resolve-req">해결 완료</button>
+      <p class="fine">요청자가 확인하면 끝나요. 답이 없으면 5분 뒤 자동으로 완료돼요.</p>`;
   },
 
-  resolving: () => `${OTOP}
-    <div class="noti">
-      ${NH(KIND_LABEL[active.kind])}
-      <div class="noti-t">요청자 확인을 기다리는 중이에요</div>
-      <p class="muted" style="margin-top:6px;line-height:1.6">요청자가 '해결됐어요'를 누르면 끝나요.<br><span id="o-auto">05:00</span> 뒤에는 자동으로 완료돼요.</p>
-      ${chatBtn()}
-    </div>`,
+  resolving: () => `${OBAR()}
+      <h2 class="big">요청자 확인을 기다리고 있어요</h2>
+      <div class="clock" id="o-auto">05:00</div>
+      <p class="lead">뒤에 자동으로 완료돼요</p>
+      <div class="spacer"></div>
+      ${chatBtn()}`,
 
   records: () => {
     const since = Date.now() - 30 * 24 * 3600e3, list = recs.filter(r => new Date(r.created_at) > since);
     const answered = list.filter(r => r.replied_at), rate = list.length ? Math.round(answered.length / list.length * 100) : 0;
     const avg = answered.length ? answered.reduce((s, r) => s + (new Date(r.replied_at) - new Date(r.created_at)), 0) / answered.length : 0;
     return `<div class="appbar"><button class="back" data-act="home" aria-label="뒤로">‹</button>기록<span class="appbar-sub">${esc(car.plate)}</span></div>
-      <div class="muted" style="margin-bottom:6px">최근 30일 내 응답 기록</div>
+      <div class="h" style="margin-top:6px">최근 30일</div>
       <div class="stats"><div><b>${list.length}</b><span>받은 요청</span></div><div><b>${rate}%</b><span>응답률</span></div><div><b>${answered.length ? secs(avg) : '-'}</b><span>평균 응답</span></div></div>
       ${recordListHTML(recs)}`;
   },
@@ -214,12 +212,12 @@ const W = {
 };
 
 function render() {
-  let h, cls = 'app dark';
+  let h, cls = 'app';
   if (!car) h = W.welcome();
-  else if (view === 'records') { cls = 'app'; h = W.records(); }
-  else if (view === 'record' && rec) { cls = 'app'; h = W.record(); }
+  else if (view === 'records') h = W.records();
+  else if (view === 'record' && rec) h = W.record();
   else if (!active) h = W.idle();
-  else if (active.status === 'ringing') { if (active.level === 'urgent') cls = 'app alert'; h = W.ring(); }
+  else if (active.status === 'ringing') { cls = active.level === 'urgent' ? 'app ring alert' : 'app ring'; h = W.ring(); }
   else if (active.status === 'resolving') h = W.resolving();
   else h = W.replied();
   APP.className = cls; APP.innerHTML = h;
@@ -229,18 +227,16 @@ function updateMsgs() {
   const u = $('#o-unread'); if (u) { u.hidden = unread <= 0; u.textContent = unread; }
   const last = [...aMsgs].reverse().find(m => m.sender === 'r');
   setText('#o-last', last && active ? `${who()}: ${last.text}` : '');
-  const ex = $('#o-extra'); if (ex) ex.innerHTML = aMsgs.filter(m => m.sender === 'r').slice(-3).map(m => `<div class="quote new">💬 ${esc(m.text)}</div>`).join('');
+  const ex = $('#o-extra'); if (ex) ex.innerHTML = aMsgs.filter(m => m.sender === 'r').slice(-3).map(m => `<div class="quote new">${esc(m.text)}</div>`).join('');
   const box = $('#chat-msgs');
   if (box && active) { const h = msgHTML(active, aMsgs, 'o', aUrls); if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; box.scrollTop = box.scrollHeight; } }
 }
 function tick() {
-  const now = new Date();
-  setText('#o-clock', hhmm(now)); setText('#o-date', dateStr(now));
-  if (!active || view !== 'home') return;
+    if (!active || view !== 'home') return;
   if (active.status === 'ringing') {
     const el = Date.now() - new Date(active.feedback_at || active.created_at).getTime();
     const iv = { urgent: 2000, normal: 3000, info: 20000 }[active.level] || 3000, c = Math.floor(el / iv);
-    setText('#o-el', secs(el));
+    setText('#o-el', clock(el));
     if (c !== lastBuzz && !document.hidden) {
       lastBuzz = c;
       APP.classList.remove('buzz', 'hard'); void APP.offsetWidth; APP.classList.add('buzz'); if (active.level === 'urgent') APP.classList.add('hard');
@@ -284,27 +280,27 @@ function signupOv() {
     <div class="row"><input class="fi" id="su-phone" type="tel" inputmode="numeric" maxlength="13" placeholder="010-1234-5678" value="${esc(su.phone)}" autocomplete="tel"${su.verified ? ' disabled' : ''}>
       <button data-act="su-code" id="su-codebtn"${su.verified || su.phone.replace(/\D/g, '').length < 10 ? ' disabled' : ''}>${su.codeSent ? '다시 받기' : '인증번호 받기'}</button></div>
     ${su.codeSent && !su.verified ? `
-      ${su.code ? `<div class="sms">💬 <b>[무브콜] 인증번호 ${su.code}</b><br><span class="muted">시험판이라 문자 대신 이 창에 보여 드리고, 아래 칸에 자동으로 넣었어요.</span></div>` : '<p class="muted" style="margin-top:10px">인증번호를 보내고 있어요…</p>'}
+      ${su.code ? `<div class="sms"><b>[저기요] 인증번호 ${su.code}</b><br><span class="muted">시험판이라 문자 대신 이 창에 보여 드리고, 아래 칸에 자동으로 넣었어요.</span></div>` : '<p class="muted" style="margin-top:10px">인증번호를 보내고 있어요…</p>'}
       <div class="row" style="margin-top:8px"><input class="fi" id="su-codein" inputmode="numeric" maxlength="6" placeholder="인증번호 6자리" value="${esc(su.code)}" autocomplete="one-time-code"><button data-act="su-verify">확인</button></div>` : ''}
     ${su.verified ? '<div class="okline">✓ 본인 확인이 끝났어요</div>' : ''}
     <label class="agree" style="margin-top:16px"><input type="checkbox" id="su-agree"${su.agree ? ' checked' : ''}> <span>(필수) 이용약관과 개인정보 수집·이용에 동의해요.<br>차량번호·휴대폰 번호는 연락 연결에만 쓰이고, 시험이 끝나면 삭제돼요.</span></label>`;
   else if (su.step === 3) {
-    const o = (k, t, d, rc, num) => `<button class="opt${su.type === k ? ' on' : ''}" data-act="su-type" data-k="${k}"><b>${su.type === k ? '◉' : '○'} ${t}</b>${rc ? '<span class="rec">권장</span>' : ''}<p>${d}</p>${num ? `<p><b style="font-size:13px">${num}</b></p>` : ''}</button>`;
+    const o = (k, t, d, rc, num) => `<button class="opt${su.type === k ? ' on' : ''}" data-act="su-type" data-k="${k}"><b>${t}</b>${rc ? '<span class="rec">권장</span>' : ''}<p>${d}</p>${num ? `<p><b style="font-size:13px">${num}</b></p>` : ''}</button>`;
     b = `<p class="muted" style="line-height:1.5">요청자가 '전화걸기'를 누르면 이 번호가 요청자 폰에 자동으로 입력돼요.</p>
       ${o('safe', '안심번호', '실제 번호 대신 0507 가상번호로 연결돼요. 요청자 통화 기록에도 내 번호가 남지 않아요.', true, '※ 시험판에서는 내 실제 번호로 연결돼요')}
       ${o('real', '내 휴대폰 번호', '요청자 폰 통화 기록에 내 실제 번호가 남아요.', false, esc(su.phone))}
       ${o('none', '전화 받지 않기', '전화걸기 버튼이 꺼지고 메시지로만 연락받아요.', false, '')}
-      ${su.type === 'real' ? '<div class="warnbox">⚠ 실제 번호는 모르는 사람에게 그대로 노출돼요. 안심번호를 권장해요.</div>' : ''}`;
+      ${su.type === 'real' ? '<div class="warnbox">실제 번호는 모르는 사람에게 그대로 노출돼요. 안심번호를 권장해요.</div>' : ''}`;
   } else if (su.step === 4) b = `
     <p class="muted" style="line-height:1.5">요청이 왔을 때 놓치지 않도록 폰 알림을 허용해 주세요. 앱을 닫아 둬도 답할 때까지 알림이 반복돼요.</p>
-    ${isIOS && !isStandalone ? '<div class="warnbox">아이폰은 <b>홈 화면에 추가한 무브콜 앱</b>에서만 알림을 켤 수 있어요.</div>' : ''}
-    <div class="perm"><div class="tx"><b>🔔 알림 허용</b><p>요청·사고·긴급 알림을 진동과 함께 받아요</p></div><button class="${su.push === 'on' ? 'on' : ''}" data-act="su-push">${su.push === 'on' ? '허용함 ✓' : '허용하기'}</button></div>
-    ${su.push === 'on' ? '<div class="perm"><div class="tx"><b>📳 알림 시험</b><p>지금 이 폰으로 시험 알림을 보내 봐요</p></div><button data-act="test-push">보내기</button></div>' : ''}
+    ${isIOS && !isStandalone ? '<div class="warnbox">아이폰은 <b>홈 화면에 추가한 저기요 앱</b>에서만 알림을 켤 수 있어요.</div>' : ''}
+    <div class="perm"><div class="tx"><b>알림 허용</b><p>요청·사고·긴급 알림을 진동과 함께 받아요</p></div><button class="${su.push === 'on' ? 'on' : ''}" data-act="su-push">${su.push === 'on' ? '허용함 ✓' : '허용하기'}</button></div>
+    ${su.push === 'on' ? '<div class="perm"><div class="tx"><b>알림 시험</b><p>지금 이 폰으로 시험 알림을 보내 봐요</p></div><button data-act="test-push">보내기</button></div>' : ''}
     ${su.pushMsg ? `<div class="${su.push === 'on' ? 'okline' : 'errline'}">${esc(su.pushMsg)}</div>` : ''}
-    <div class="hint">💡 회의 중에도 받으려면 폰의 <b>방해금지 모드 예외 앱</b>에 ${isIOS ? '무브콜' : '크롬'}을 넣어 두세요.</div>`;
+    <div class="hint">회의 중에도 받으려면 폰의 <b>방해금지 모드 예외 앱</b>에 ${isIOS ? '저기요' : '크롬'}을 넣어 두세요.</div>`;
   else b = `<p class="muted center" style="line-height:1.5">가입이 끝났어요! 이 QR 스티커를 인쇄해서<br>앞유리 안쪽, 밖에서 잘 보이는 곳에 붙여 주세요.</p>
     ${stickerHTML(carUrl())}
-    <button class="btn soft" data-act="sticker-dl" style="margin-top:14px">⬇ 스티커 이미지 저장</button>
+    <button class="btn soft" data-act="sticker-dl" style="margin-top:14px">스티커 이미지 저장</button>
     <p class="muted center" style="font-size:12px;margin-top:8px;line-height:1.5">시험할 때는 다른 폰 카메라로 이 화면의 QR을 찍어 보세요.</p>`;
   const next = su.step === 5 ? '시작하기' : su.step === 4 ? (su.saving ? '저장 중…' : '가입 완료하고 QR 받기') : '다음';
   return `<div class="ov">
@@ -317,12 +313,12 @@ function signupOv() {
 function stickerOv() {
   return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>내 QR 스티커</b><div class="muted">${esc(car.plate)} 전용</div></div></div>
     <div class="ov-body">${stickerHTML(carUrl())}<div class="urlbox">${esc(carUrl())}</div>
-      <button class="btn primary" data-act="sticker-dl">⬇ 스티커 이미지 저장</button>
-      <button class="btn ghost" data-act="copy" data-t="${esc(carUrl())}">🔗 주소 복사</button>
+      <button class="btn primary" data-act="sticker-dl">스티커 이미지 저장</button>
+      <button class="btn ghost" data-act="copy" data-t="${esc(carUrl())}">주소 복사</button>
       <p class="muted center" style="margin-top:10px;line-height:1.5;font-size:12px">인쇄해서 앞유리 안쪽, 밖에서 잘 보이는 곳에 붙여 주세요.</p></div></div>`;
 }
 function setOv() {
-  const o = (k, t, d, rc) => `<button class="opt${car.call_type === k ? ' on' : ''}" data-act="set-num" data-k="${k}"><b>${car.call_type === k ? '◉' : '○'} ${t}</b>${rc ? '<span class="rec">권장</span>' : ''}<p>${d}</p></button>`;
+  const o = (k, t, d, rc) => `<button class="opt${car.call_type === k ? ' on' : ''}" data-act="set-num" data-k="${k}"><b>${t}</b>${rc ? '<span class="rec">권장</span>' : ''}<p>${d}</p></button>`;
   return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>요청자가 전화할 번호</b><div class="muted">언제든 바꿀 수 있어요</div></div></div>
     <div class="ov-body">
       ${o('safe', '안심번호', '0507 가상번호로 연결 (시험판에서는 내 실제 번호로 연결)', true)}
@@ -333,19 +329,19 @@ function setOv() {
 function statusOv() {
   const d = sd, sel = k => (d.code || 'none') === k;
   const preview = statusText({ status_code: d.code, status_min: d.min, status_until: d.until, status_at: new Date().toISOString() });
-  const opt = (k, title, desc) => `<button class="opt${sel(k) ? ' on' : ''}" data-act="sd-code" data-k="${k}"><b>${sel(k) ? '◉' : '○'} ${title}</b>${desc ? `<p>${desc}</p>` : ''}</button>`;
+  const opt = (k, title, desc) => `<button class="opt${sel(k) ? ' on' : ''}" data-act="sd-code" data-k="${k}"><b>${title}</b>${desc ? `<p>${desc}</p>` : ''}</button>`;
   return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>요청자에게 남길 말</b><div class="muted">QR을 찍으면 가장 먼저 보여요</div></div></div>
     <div class="ov-body">
       <p class="muted" style="line-height:1.55">요청자가 마음 편히 연락할 수 있게, 지금 얼마나 빨리 올 수 있는지 알려 주세요.</p>
-      ${opt('near', '🚶 가까이 있어요', '○분 거리에 있어요. 연락 주시면 바로 갈게요')}
+      ${opt('near', '가까이 있어요', '○분 거리에 있어요. 연락 주시면 바로 갈게요')}
       ${sel('near') ? `<div class="chips c4" style="margin-top:8px">${NEAR_MIN.map(m => `<button class="chip${d.min === m ? ' on' : ''}" data-act="sd-min" data-k="${m}">${m}분</button>`).join('')}</div>` : ''}
-      ${opt('meeting', '💼 회의·업무 중이에요', '○시까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요')}
+      ${opt('meeting', '회의·업무 중이에요', '○시까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요')}
       ${sel('meeting') ? `<div class="row" style="margin-top:8px"><span style="align-self:center;font-size:14px;font-weight:700;flex:none">끝나는 시각</span><input class="fi" id="sd-until" type="time" value="${esc(d.until || '')}"></div>` : ''}
       ${opt('none', '남기지 않기', '')}
-      ${preview ? `<div class="ownerstat"><div style="font-size:11.5px;opacity:.75;margin-bottom:2px">요청자에게 이렇게 보여요</div>${esc(preview)}</div>` : ''}
+      ${preview ? `<div class="ownerstat"><div style="font-size:12px;color:var(--sub);margin-bottom:2px">요청자에게 이렇게 보여요</div>“${esc(preview)}”</div>` : ''}
       <button class="btn primary" data-act="save-status">저장</button>
       <p class="muted" style="font-size:12px;margin-top:8px;line-height:1.5">'가까이 있어요'는 12시간 뒤, '회의 중'은 끝나는 시각이 지나면 자동으로 사라져요.</p>
-      <div class="h">🕒 출차 예고</div>
+      <div class="h">출차 예고</div>
       <div class="row"><input class="fi" id="leave-at" type="time" value="${esc(car.leave_at || '')}"><button data-act="set-leave">저장</button></div>
       ${leaveText(car) ? `<p class="muted" style="margin-top:6px">${esc(leaveText(car))} <button class="linkbtn" data-act="clear-leave">지우기</button></p>` : '<p class="muted" style="margin-top:6px">"○시에 나가요"를 요청자에게 미리 보여 줘요</p>'}
     </div></div>`;
@@ -362,7 +358,7 @@ function renderOv(force) {
   if (ov === 'chat' && !active) ov = null;
   const k = curOvKey(); if (!force && k === ovKey) return; ovKey = k;
   OV.innerHTML = ov === 'signup' ? signupOv() : ov === 'sticker' ? stickerOv() : ov === 'set' ? setOv() : ov === 'status' ? statusOv()
-    : ov === 'chat' ? chatOvHTML(`${whoWith()} 메시지`, `${KIND_LABEL[active.kind]} · 번호는 서로 보이지 않아요`, QUICK_OF(active, 'o'), freeInput)
+    : ov === 'chat' ? chatOvHTML(`${whoWith()} 메시지`, `${KIND_LABEL[active.kind]}, 번호는 서로 보이지 않아요`, QUICK_OF(active, 'o'), freeInput)
     : ov === 'photo' ? photoOvHTML(photoList, photoI) : '';
   if (ov === 'chat') { unread = 0; updateMsgs(); }
 }
@@ -473,7 +469,7 @@ document.addEventListener('click', async e => {
     case 'sticker': ov = 'sticker'; renderOv(); break;
     case 'sticker-dl': {
       const blob = await stickerBlob(carUrl());
-      const res = await saveFiles([new File([blob], `무브콜_QR스티커_${car.plate.replace(/\s/g, '')}.png`, { type: 'image/png' })]);
+      const res = await saveFiles([new File([blob], `저기요_QR스티커_${car.plate.replace(/\s/g, '')}.png`, { type: 'image/png' })]);
       if (res === 'downloaded') toast('스티커 이미지를 저장했어요');
       break;
     }
@@ -502,7 +498,7 @@ document.addEventListener('click', async e => {
     case 'free-input': freeInput = true; renderOv(true); updateMsgs(); setTimeout(() => $('#chat-in')?.focus(), 60); break;
     case 'quick': await sendMsg(b.dataset.t); break;
     case 'send-msg': { const i = $('#chat-in'); const v = i.value; i.value = ''; await sendMsg(v); i.focus(); break; }
-    case 'log-call': if (active) sb.from('messages').insert({ request_id: active.id, sender: 'sys', text: `📞 차주가 ${who()}에게 전화를 걸었어요` }).then(() => { }); break;
+    case 'log-call': if (active) sb.from('messages').insert({ request_id: active.id, sender: 'sys', text: `차주가 ${who()}에게 전화를 걸었어요` }).then(() => { }); break;
     case 'photo': photoList = view === 'record' && rec ? rec.urls : aUrls; photoI = +b.dataset.i; ov = 'photo'; renderOv(); break;
     case 'save-photos': { const t = view === 'record' && rec ? rec : { r: active, urls: aUrls }; if (t.r) await savePhotos(t.r, t.urls); break; }
     /* 기록 */
@@ -512,7 +508,7 @@ document.addEventListener('click', async e => {
     case 'keep': {
       if (!rec) break;
       const v = !rec.r.keep_o; const { error } = await sb.from('requests').update({ keep_o: v }).eq('id', rec.r.id);
-      if (!error) { rec.r.keep_o = v; toast(v ? '⭐ 보관했어요. 자동 삭제되지 않아요' : '보관을 해제했어요'); render(); }
+      if (!error) { rec.r.keep_o = v; toast(v ? '보관했어요. 자동 삭제되지 않아요' : '보관을 해제했어요'); render(); }
       break;
     }
     case 'export-png': await exportPNG(rec.r, rec.msgs, car.plate, rec.urls); break;

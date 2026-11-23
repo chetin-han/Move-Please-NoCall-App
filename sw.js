@@ -1,19 +1,19 @@
-/* 무브콜 시험판 — 폰 알림 담당 (앱을 닫아 둬도 동작) */
+/* 저기요 시험판 — 폰 알림 담당 (앱을 닫아 둬도 동작) */
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', e => {
   let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: '무브콜', body: e.data ? e.data.text() : '' }; }
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: '저기요', body: e.data ? e.data.text() : '' }; }
   const ring = d.kind === 'ring', urgent = !!d.urgent;
   const ACTIONS = {
-    move: [{ action: 'soon', title: '🙆 곧 갈게요 (5분)' }, { action: 'now', title: '🏃 지금 가요' }],
-    acc: [{ action: 'acc_go', title: '🏃 지금 갈게요' }, { action: 'acc_call', title: '📞 전화드릴게요' }],
-    bb: [{ action: 'bb_check', title: '🔍 확인해 볼게요' }],
-    etc: [{ action: 'etc_go', title: '🏃 지금 가 볼게요' }, { action: 'etc_thx', title: '🙏 확인했어요' }]
+    move: [{ action: 'soon', title: '곧 갈게요 (5분)' }, { action: 'now', title: '지금 가요' }],
+    acc: [{ action: 'acc_go', title: '지금 갈게요' }, { action: 'acc_call', title: '전화드릴게요' }],
+    bb: [{ action: 'bb_check', title: '확인해 볼게요' }],
+    etc: [{ action: 'etc_go', title: '지금 가 볼게요' }, { action: 'etc_thx', title: '확인했어요' }]
   };
   const actions = ring ? (ACTIONS[d.rkind] || []) : [];
-  e.waitUntil(self.registration.showNotification(d.title || '무브콜', {
+  e.waitUntil(self.registration.showNotification(d.title || '저기요', {
     body: d.body || '',
     tag: d.tag || 'movecall',
     renotify: true,                       // 같은 요청이라도 매번 다시 울림
