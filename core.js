@@ -24,7 +24,7 @@ const isStandalone = matchMedia('(display-mode: standalone)').matches || navigat
 const canVib = () => !!navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive);
 const vib = p => { if (canVib()) try { navigator.vibrate(p); } catch (e) { } };
 
-const LOGO = '<img class="logo" src="icons/icon-192.png" alt="">';
+const LOGO = '<img class="logo" src="icons/icon-192.png?v=2" alt="">';
 const BRAND = LOGO + '<span class="wm">저기요</span>';
 const clock = ms => { const x = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(x / 60)}:${pad(x % 60)}`; };
 const plateHTML = (t, cls) => `<span class="plate${cls ? ' ' + cls : ''}">${esc(t)}</span>`;
@@ -185,7 +185,7 @@ async function stickerBlob(url) {
   const rr = (x, y, w, h, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); };
   const F = 'Pretendard, "Malgun Gothic", sans-serif';
   try { await document.fonts.load('400 76px Gaegu', '저기요'); } catch (e) { }
-  const logo = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = 'icons/icon-512.png'; });
+  const logo = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = 'icons/icon-512.png?v=2'; });
   g.fillStyle = '#1B6B4E'; rr(0, 0, W, H, 48); g.fill();
   g.fillStyle = '#fff'; rr(24, 24, W - 48, H - 48, 32); g.fill();
   g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#1C211F'; g.font = `400 76px Gaegu, ${F}`;

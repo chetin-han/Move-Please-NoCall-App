@@ -210,7 +210,7 @@ const V = {
   wait: () => {
     const u = cur.level === 'urgent';
     return `${BAR()}
-      <img class="tapmark${u ? ' fast' : ''}" src="icons/icon-192.png" alt="">
+      <img class="tapmark${u ? ' fast' : ''}" src="icons/icon-192.png?v=2" alt="">
       <div class="clock" id="r-el">0:00</div>
       <h2 class="big" style="margin-top:10px">${cur.feedback ? '직접 와 달라고 다시 알리고 있어요' : u ? '긴급 알림을 보내고 있어요' : '차주 폰이 울리고 있어요'}</h2>
       <p class="lead">알림 <b id="r-rings">${rings}</b>번 보냄. 이 화면을 열어 두세요.</p>

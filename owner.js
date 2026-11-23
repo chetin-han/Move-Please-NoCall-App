@@ -132,7 +132,7 @@ const statusLines = () => [statusText(car), leaveText(car)].filter(Boolean);
 
 const W = {
   welcome: () => `<div class="welcome">
-      <img class="logo big" src="icons/icon-512.png" alt="">
+      <img class="logo big" src="icons/icon-512.png?v=2" alt="">
       <h1 class="wm big">저기요<small>가칭</small></h1>
       <p class="lead">QR 스티커 하나로<br>주차 이동 요청과 사고 알림을 받아요</p>
       <ul>

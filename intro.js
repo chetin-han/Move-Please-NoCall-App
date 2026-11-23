@@ -9,7 +9,7 @@
   const el = document.createElement('div');
   el.className = 'ji';
   el.setAttribute('aria-hidden', 'true');
-  el.innerHTML = '<div class="ji-col"><div class="ji-tile"><div class="ji-cam"><img class="a" src="intro/scene_a.jpg" alt=""><img class="b" src="intro/scene_b.jpg" alt="" onerror="this.remove()"></div>'
+  el.innerHTML = '<div class="ji-col"><div class="ji-tile"><div class="ji-cam"><img class="a" src="intro/scene_a.jpg?v=2" alt=""><img class="b" src="intro/scene_b.jpg?v=2" alt="" onerror="this.remove()"></div>'
     + '<img class="ji-face" src="intro/scene_c.jpg?v=2" alt="" onerror="this.remove()"></div><div class="ji-word">저기요<i>가칭</i></div><span class="ji-tok a">톡</span><span class="ji-tok b">톡</span></div>';
   document.body.appendChild(el);
   const col = el.firstChild, $ = s => el.querySelector(s);
