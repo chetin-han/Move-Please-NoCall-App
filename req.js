@@ -8,6 +8,9 @@ let mv = { reason: null, floor: null, zone: '', memo: '', blobs: [], previews: [
 let ac = { sub: null, name: '', plate: '', phone: '', desc: '', when: null, what: null, where: '', blobs: [], previews: [], agree: false };
 let et = { sub: null };
 let ringTimer = null, rings = 0, lastRes = null, sending = false, view = 'main', recs = [], rec = null, chan = null;
+/* 이용 시간: 차번호 확인 후 15분, 남은 시간 5분 이내면 10분씩 연장 (서버도 같은 규칙으로 막음) */
+const EXT_WIN = 5 * 60000;
+let exp = 0, warned = false, expired = null;
 
 /* ---------- 시작 ---------- */
 async function boot() {
@@ -15,11 +18,10 @@ async function boot() {
   catch (e) { APP.innerHTML = `<div class="fatal">접속에 실패했어요.<br><small>${esc(e.message)}</small></div>`; return; }
   if (carId) {
     await loadInfo();
-    verified = sessionStorage.getItem('mc-ok-' + carId) === '1';
     if (info) {
-      const { data: mine } = await sb.from('requests').select('*').eq('car_id', carId).eq('requester', me.id)
-        .in('status', ['ringing', 'replied', 'resolving']).order('created_at', { ascending: false }).limit(1);
-      if (mine?.[0]) { verified = true; await setCur(mine[0]); }
+      const { data: left } = await sb.rpc('car_pass_left', { cid: carId });
+      setLeft(left); warned = verified && exp - Date.now() <= EXT_WIN;
+      if (verified) await resumeActive();
     }
   }
   render();
@@ -29,6 +31,23 @@ async function boot() {
     const { data } = await sb.from('requests').select('*').eq('id', cur.id).maybeSingle();
     if (data) { await setCur(data); render(); }
   });
+}
+function setLeft(sec) { exp = sec > 0 ? Date.now() + sec * 1000 : 0; verified = exp > Date.now(); }
+/* 확인 전에 보낸 요청이 아직 진행 중이면 이어서 보여 줌 */
+async function resumeActive() {
+  const { data: mine } = await sb.from('requests').select('*').eq('car_id', carId).eq('requester', me.id)
+    .in('status', ['ringing', 'replied', 'resolving']).order('created_at', { ascending: false }).limit(1);
+  if (mine?.[0]) { rings = 0; lastRes = null; await setCur(mine[0]); }
+}
+/* 15분(연장 포함)이 지나면 화면을 닫고 숫자 확인부터 다시 */
+async function expire() {
+  const hadReq = !!(cur && ['ringing', 'replied', 'resolving'].includes(cur.status));
+  verified = false; exp = 0; expired = hadReq ? 'req' : 'plain';
+  stopRing(); if (chan) sb.removeChannel(chan); chan = null;
+  cur = null; msgs = []; urls = []; unread = 0; sending = false; resetForms();
+  ov = null; view = 'main'; rec = null; vErr = '';
+  vib([300, 100, 300]);
+  await loadInfo(); render(); scrollTo(0, 0);
 }
 async function loadInfo() { const { data } = await sb.rpc('car_public', { cid: carId }); info = data?.[0] || null; }
 async function setCur(r) {
@@ -77,6 +96,7 @@ function updateRingInfo() {
 
 /* ---------- 화면 조각 ---------- */
 const APPBAR = `<div class="appbar"><span class="logo">P</span>무브콜<button class="linkbtn" data-act="records" style="color:var(--sub)">내 기록</button></div>`;
+const BAR = () => APPBAR + (verified ? `<div class="sess" id="r-sess">⏱ <b id="r-left">--:--</b> <span id="r-sess-t"></span><button data-act="extend" id="r-ext" hidden>+10분 연장</button></div>` : '');
 const label = () => `${info.plate_masked} ${info.color || ''} ${info.kind || ''}`.trim();
 const LOCK = () => ({ safe: '🔒 차주 전화번호는 보이지 않아요.', real: '📞 차주가 휴대폰 번호로 전화 받기를 허용했어요.', none: '💬 차주는 메시지로만 연락받아요.' })[info.call_type];
 function ownerStatus() {
@@ -113,6 +133,7 @@ const V = {
     <p class="muted" style="margin-top:8px;line-height:1.6">차주가 가입을 해지했거나 주소가 잘못됐어요.</p></div>`,
 
   verify: () => `${APPBAR}
+    ${expired ? `<div class="hint expired">⏱ 이용 시간(15분)이 지나 화면이 닫혔어요.<br>${expired === 'req' ? '보낸 요청은 숫자를 다시 확인하면 이어서 볼 수 있어요.' : '다시 연락하려면 숫자를 다시 확인해 주세요.'}</div>` : ''}
     <div class="card verify">
       <div style="font-size:32px">🚗</div>
       <div class="big" style="margin-top:6px">이 차가 맞는지 확인할게요</div>
@@ -121,10 +142,11 @@ const V = {
       <div class="digits">${(info.hide_idx || []).map((_, i) => `<input class="dg" id="dg${i}" inputmode="numeric" maxlength="1" autocomplete="off" aria-label="가려진 숫자 ${i + 1}">`).join('')}</div>
       ${vErr ? `<div class="errline">${esc(vErr)}</div>` : ''}
       <button class="btn primary" data-act="verify" id="vbtn" disabled>확인</button>
+      <p class="muted" style="margin-top:10px;font-size:12px">확인 후 15분 동안 연락할 수 있어요 (끝나기 5분 전부터 10분 연장 가능)</p>
     </div>`,
 
   form: () => {
-    const head = `${APPBAR}
+    const head = `${BAR()}
       <div class="card">
         <div class="car"><div class="ic">🚗</div><div><div class="plate">${esc(info.plate_masked)}</div><div class="muted">${esc(info.color || '')} ${esc(info.kind || '')}</div></div></div>
         ${ownerStatus()}
@@ -189,7 +211,7 @@ const V = {
 
   wait: () => {
     const u = cur.level === 'urgent', icon = { move: '📳', acc: '🚨', bb: '📹', etc: u ? '🆘' : '📢' }[cur.kind];
-    return `${APPBAR}
+    return `${BAR()}
       <div class="pulse${u ? ' red' : ''}">${icon}</div>
       <div class="big">${cur.feedback ? '차주에게 직접 와 달라고 다시 알리고 있어요' : u ? '차주에게 긴급 알림을 보내고 있어요' : '차주 폰에 알림을 보내고 있어요'}</div>
       <p class="center muted" style="margin-top:6px">알림 <b id="r-rings">${rings}</b>번 보냄 · <span id="r-el">0초</span> 지남</p>
@@ -208,7 +230,7 @@ const V = {
 
   replied: () => {
     const rp = REP(cur.reply) || { icon: '💬', t: '확인했어요', min: 0 };
-    if (cur.reply === 'neutral') return `${APPBAR}
+    if (cur.reply === 'neutral') return `${BAR()}
       <div class="bubble"><div class="ic">🅽</div><div class="lb">“중립이에요, 살살 밀어 주세요”</div>
         <div class="muted" style="margin-top:4px">차주가 ${secs(new Date(cur.replied_at) - new Date(cur.created_at))} 만에 답했어요</div></div>
       <div class="caution">⚠ <b>천천히, 무리하지 마세요.</b> 혼자 밀기 어렵거나 경사진 곳이면 밀지 마세요.<br>시동이 꺼지면 브레이크가 자동으로 걸리는 차(전자식 주차브레이크)는 중립이어도 안 밀릴 수 있어요.</div>
@@ -221,7 +243,7 @@ const V = {
         <button class="ok" data-act="resolve">✅ 해결됐어요</button>
       </div>
       <div class="lastmsg" id="r-last"></div>`;
-    return `${APPBAR}
+    return `${BAR()}
       <div class="bubble"><div class="ic">${rp.icon}</div><div class="lb">“${rp.t}”</div>
         <div class="muted" style="margin-top:4px">차주가 ${secs(new Date(cur.replied_at) - new Date(cur.created_at))} 만에 답했어요</div></div>
       ${rp.min ? `<p class="center muted" style="margin-top:10px">도착 예상까지</p><div class="cd" id="r-cd">--:--</div>` : ''}
@@ -235,7 +257,7 @@ const V = {
 
   resolving: () => {
     const left = new Date(cur.resolve_req_at).getTime() + 5 * 60000 - Date.now();
-    return `${APPBAR}
+    return `${BAR()}
       <div class="pulse ok">🙋</div>
       <div class="big">차주가 해결됐다고 알렸어요</div>
       <p class="center muted" style="margin-top:8px;line-height:1.6">정말 해결됐나요?<br><span id="r-auto">${mmss(Math.max(0, left))}</span> 뒤에는 자동으로 완료돼요</p>
@@ -249,7 +271,7 @@ const V = {
     const cancelled = cur.status === 'cancelled';
     const sentThanks = msgs.some(m => m.sender === 'r' && m.text.startsWith('💐'));
     const th = cur.kind === 'move' ? THANKS.move : THANKS.other;
-    return `${APPBAR}
+    return `${BAR()}
       <div class="pulse ok">${cancelled ? '↩️' : '✅'}</div>
       <div class="big">${cancelled ? '요청을 취소했어요' : '해결됐어요'}</div>
       <p class="center muted" style="margin-top:8px;line-height:1.6">${cancelled ? '' : cur.kind === 'acc' ? '알려 주셔서 감사합니다.<br>이후 보험 처리는 차주와 직접 진행해 주세요.' : cur.done_at ? `요청부터 해결까지 ${secs(new Date(cur.done_at) - new Date(cur.created_at))}${cur.resolved_by === 'auto' ? ' (자동 완료)' : ''}` : ''}</p>
@@ -288,6 +310,16 @@ function updateMsgs() {
   if (box && cur) { const h = msgHTML(cur, msgs, 'r', urls); if (box.dataset.h !== h) { box.dataset.h = h; box.innerHTML = h; box.scrollTop = box.scrollHeight; } }
 }
 function tick() {
+  if (verified) {
+    const left = exp - Date.now();
+    if (left <= 0) { expire(); return; }
+    const w = left <= EXT_WIN, bar = $('#r-sess');
+    if (bar) {
+      bar.classList.toggle('warn', w); setText('#r-left', mmss(left));
+      setText('#r-sess-t', w ? '남았어요' : '뒤 자동으로 닫혀요'); $('#r-ext').hidden = !w;
+    }
+    if (w && !warned) { warned = true; vib([200, 100, 200]); toast('5분 뒤 화면이 닫혀요. 더 필요하면 [+10분 연장]을 눌러 주세요', 4500); }
+  }
   if (!cur || view !== 'main') return;
   if (cur.status === 'ringing') {
     const el = Date.now() - new Date(cur.feedback_at || cur.created_at).getTime();
@@ -350,7 +382,12 @@ async function send() {
       await insertReq({ kind: 'etc', level: it.lv, sub: it.k });
     }
     sending = false; render(); scrollTo(0, 0);
-  } catch (e) { sending = false; toast('보내지 못했어요: ' + (e.message || e), 4000); render(true); }
+  } catch (e) {
+    sending = false;
+    const rls = /row-level security|violates/i.test(e.message || '');
+    toast(rls ? '이용 시간이 끝나 보내지 못했어요. 숫자를 다시 확인해 주세요' : '보내지 못했어요: ' + (e.message || e), 4000);
+    if (rls) await expire(); else render(true);
+  }
 }
 async function updateCur(patch, sysText) {
   const { data, error } = await sb.from('requests').update(patch).eq('id', cur.id).select().single();
@@ -391,8 +428,14 @@ document.addEventListener('click', async e => {
     case 'verify': {
       const ans = $$('.dg').map(i => i.value.trim()).join('');
       const { data } = await sb.rpc('car_check', { cid: carId, idx: info.hide_idx, ans });
-      if (data === true) { verified = true; vErr = ''; sessionStorage.setItem('mc-ok-' + carId, '1'); render(); }
+      if (data > 0) { setLeft(data); warned = false; expired = null; vErr = ''; await resumeActive(); render(); scrollTo(0, 0); }
       else { vErr = '숫자가 맞지 않아요. 다른 자리로 다시 확인해 주세요.'; await loadInfo(); render(); }
+      break;
+    }
+    case 'extend': {
+      const { data } = await sb.rpc('car_extend', { cid: carId });
+      if (data > 0) { setLeft(data); warned = exp - Date.now() <= EXT_WIN; toast('10분 연장했어요'); tick(); }
+      else toast('남은 시간이 5분 이내일 때 연장할 수 있어요');
       break;
     }
     case 'mode': mode = k; render(); break;
