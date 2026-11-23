@@ -101,7 +101,7 @@ const BAR = () => verified ? `<div class="appbar">${BRAND}<span class="sess" id=
 const label = () => `${info.plate_masked} ${info.color || ''} ${info.kind || ''}`.trim();
 function ownerStatus() {
   const parts = [statusText(info), leaveText(info)].filter(Boolean);
-  return sayHTML(parts, parts.length ? `차주가 남긴 말, ${ampm(info.status_at || info.leave_set_at)}` : '');
+  return sayHTML(parts, parts.length ? `차주가 남긴 말, ${ampm(info.status_at || info.leave_set_at)}` : '', 'box');
 }
 const CONTACT = extra => `<div class="links"><button data-act="chat">메시지<span class="unread" id="r-unread" hidden></span></button>${info.call_type === 'none' ? '' : '<button data-act="dial">전화</button>'}${extra || ''}</div>
   <div class="lastmsg" id="r-last"></div>`;
@@ -111,7 +111,7 @@ const curPhotoObj = () => mode === 'move' ? mv : ac;
 const curPhotoMax = () => mode === 'move' ? 1 : 3;
 const rowOpt = (f, k, t, cur, cls) => `<button class="row-opt${cls ? ' ' + cls : ''}${cur === k ? ' on' : ''}" data-act="pick" data-f="${f}" data-k="${k}">${t}</button>`;
 
-const okMove = () => !!(mv.reason && mv.floor && mv.zone.trim());
+const okMove = () => !!mv.reason;   // 위치는 선택
 const okAcc = () => {
   if (!ac.sub || !ac.agree) return false;
   const ph = ac.phone.replace(/\D/g, '').length >= 10;
@@ -131,7 +131,9 @@ const V = {
 
   /* 번호판 자체가 입력칸: 가려진 자리에 숫자를 채움 */
   verify: () => `${APPBAR}
-    <h2 class="big">가려진 숫자 ${(info.hide_idx || []).length}개를<br>채워 주세요</h2>
+    <div class="hero"><img src="intro/scene_a.jpg?v=2" alt=""></div>
+    <p class="carnote">${esc([info.color, info.kind].filter(Boolean).join(' ') || '이 차')} 차주에게 조심스럽게 알려 드릴게요</p>
+    <h2 class="big" style="margin-top:6px">가려진 숫자 ${(info.hide_idx || []).length}개를<br>채워 주세요</h2>
     <span class="plate big">${[...info.plate_hint].map((ch, i) => ch === '●'
       ? `<input class="dg" data-pos="${i + 1}" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="가려진 숫자">`
       : ch === ' ' ? '<i class="gap"></i>' : esc(ch)).join('')}</span>
@@ -160,9 +162,9 @@ const V = {
     const sendBtn = (cls, txt, ok) => `<button class="btn ${cls}" data-act="send" id="send"${ok && !sending ? '' : ' disabled'}>${sending ? '보내는 중' : txt}</button>`;
     if (mode === 'move') return `${head}
       <div class="rows">${Object.entries(REASONS).map(([k, t]) => rowOpt('mv.reason', k, t, mv.reason)).join('')}</div>
-      <div class="h">차 위치</div>
+      <div class="h">차 위치 <span class="opt-tag">선택</span></div>
       <div class="floors">${FLOORS.map(f => `<button class="fl${mv.floor === f ? ' on' : ''}" data-act="pick" data-f="mv.floor" data-k="${f}">${f}</button>`).join('')}</div>
-      <input class="zone" id="mv-zone" maxlength="20" placeholder="기둥 번호 (예: B-14)" value="${esc(mv.zone)}" autocomplete="off">
+      <input class="zone" id="mv-zone" maxlength="20" placeholder="상세위치 (기둥 번호 등)" value="${esc(mv.zone)}" autocomplete="off">
       <input class="fi" id="mv-memo" maxlength="30" placeholder="메모 (선택)" value="${esc(mv.memo)}" autocomplete="off">
       <div class="photos" id="photos">${photosHTML(mv, 1)}</div>
       <div class="spacer"></div>
@@ -219,7 +221,8 @@ const V = {
       <div class="hint" id="r-nosub" hidden>차주 폰의 알림이 꺼져 있는 것 같아요. 메시지나 전화도 해 보세요.</div>
       <div class="hint" id="r-hint" hidden>${cur.kind === 'acc' ? '연락이 닿지 않으면 떠나기 전에 경찰(112)에도 알려 두세요.' : '답이 늦으면 메시지나 전화를 해 보세요.'}</div>
       <div class="spacer"></div>
-      ${CONTACT(cur.kind === 'acc' ? '' : '<button class="q" data-act="cancel">요청 취소</button>')}`;
+      ${CONTACT()}
+      <button class="btn ghost" data-act="cancel">호출 취소하기</button>`;
   },
 
   replied: () => {
@@ -235,7 +238,8 @@ const V = {
       </div>
       <div class="spacer"></div>
       ${CONTACT()}
-      <button class="btn primary" data-act="resolve">해결됐어요</button>`;
+      <button class="btn primary" data-act="resolve">해결됐어요</button>
+      <button class="btn ghost" data-act="cancel">호출 취소하기</button>`;
     return `${BAR()}
       ${sayHTML([rp.t], took, 'big')}
       ${rp.min ? `<div class="clock" id="r-cd">--:--</div><p class="lead">도착 예상까지</p>` : ''}
@@ -244,7 +248,8 @@ const V = {
       ${cur.reply === 'cant' ? '<p class="lead">지금은 바로 오기 어렵다고 해요. 메시지나 전화로 이야기해 보세요.</p>' : ''}
       <div class="spacer"></div>
       ${CONTACT()}
-      <button class="btn primary" data-act="resolve">해결됐어요</button>`;
+      <button class="btn primary" data-act="resolve">해결됐어요</button>
+      <button class="btn ghost" data-act="cancel">호출 취소하기</button>`;
   },
 
   resolving: () => {
@@ -266,7 +271,7 @@ const V = {
     const sub = cancelled ? '' : cur.kind === 'acc' ? '알려 주셔서 감사합니다. 이후 보험 처리는 차주와 직접 진행해 주세요.'
       : cur.done_at ? `요청부터 해결까지 ${secs(new Date(cur.done_at) - new Date(cur.created_at))}${cur.resolved_by === 'auto' ? ' (자동 완료)' : ''}` : '';
     return `${BAR()}
-      <h2 class="big" style="margin-top:28px">${cancelled ? '요청을 취소했어요' : '해결됐어요'}</h2>
+      <h2 class="big" style="margin-top:28px">${cancelled ? '호출을 취소했어요' : '해결됐어요'}</h2>
       ${sub ? `<p class="lead">${sub}</p>` : ''}
       ${cancelled ? '' : sentThanks ? '<p class="okline">감사 인사를 보냈어요</p>'
         : `<div class="h">차주에게 감사 인사</div><div class="rows">${th.map(t => `<button class="row-opt" data-act="thanks" data-t="${esc(t)}">${t}</button>`).join('')}</div>`}
@@ -359,7 +364,8 @@ async function send() {
     if (mode === 'move') {
       if (!okMove()) throw new Error('입력을 확인해 주세요');
       const photos = []; for (const b of mv.blobs) photos.push(await uploadPhoto(b, me.id));
-      await insertReq({ kind: 'move', level: 'normal', reason: mv.reason, loc: { floor: mv.floor, zone: mv.zone.trim(), memo: mv.memo.trim() || null }, photos });
+      const loc = (mv.floor || mv.zone.trim() || mv.memo.trim()) ? { floor: mv.floor || null, zone: mv.zone.trim() || null, memo: mv.memo.trim() || null } : null;
+      await insertReq({ kind: 'move', level: 'normal', reason: mv.reason, loc, photos });
     } else if (mode === 'acc') {
       if (!okAcc()) throw new Error('입력을 확인해 주세요');
       if (ac.sub === 'bb') await insertReq({ kind: 'bb', level: 'normal', sub: 'bb', acc: { when: ac.when, what: ac.what, where: ac.where.trim() || null, name: ac.name.trim() || null, phone: ac.phone } });
@@ -436,7 +442,7 @@ document.addEventListener('click', async e => {
     case 'rm-photo': { const o = curPhotoObj(), i = +b.dataset.i; URL.revokeObjectURL(o.previews[i]); o.blobs.splice(i, 1); o.previews.splice(i, 1); $('#photos').innerHTML = photosHTML(o, curPhotoMax()); break; }
     case 'send': await send(); break;
     case 'cancel':
-      if (!cur || !confirm('요청을 취소할까요?')) return;
+      if (!cur || !confirm('호출을 취소할까요? 차주 폰의 알림이 멈춰요.')) return;
       await updateCur({ status: 'cancelled' }); break;
     case 'fb': {
       const code = k;
@@ -452,7 +458,9 @@ document.addEventListener('click', async e => {
       msgs.push({ sender: 'r', text: t, created_at: new Date().toISOString(), id: -Date.now() });
       notify('thanks', cur.id, { text: b.dataset.t }); toast('감사 인사를 보냈어요'); render(); break;
     }
-    case 'restart': stopRing(); if (chan) sb.removeChannel(chan); chan = null; cur = null; msgs = []; urls = []; resetForms(); view = 'main'; await loadInfo(); render(); scrollTo(0, 0); break;
+    case 'restart': stopRing(); if (chan) sb.removeChannel(chan); chan = null; cur = null; msgs = []; urls = []; resetForms(); view = 'main';
+      verified = false; exp = 0; expired = null; again = false; vErr = '';   // 다시 요청하려면 숫자 확인부터
+      await loadInfo(); render(); scrollTo(0, 0); break;
     case 'chat': ov = 'chat'; renderOv(); break;
     case 'free-input': freeInput = true; renderOv(true); updateMsgs(); setTimeout(() => $('#chat-in')?.focus(), 60); break;
     case 'dial':

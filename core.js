@@ -118,6 +118,10 @@ function statusText(c) {
     if (Date.now() - new Date(c.status_at) > 12 * 3600e3) return '';   // 12시간 지나면 숨김
     return `${c.status_min || 5}분 거리에 있어요. 연락 주시면 바로 갈게요`;
   }
+  if (c.status_code === 'custom') {
+    if (Date.now() - new Date(c.status_at) > 12 * 3600e3) return '';   // 직접 쓴 말도 12시간 뒤 숨김
+    return c.status_text || '';
+  }
   if (c.status_code === 'meeting') {
     if (!timeValid(c.status_until, c.status_at, 0)) return '';         // 회의가 끝나면 숨김
     return `${koTime(c.status_until)}까지 회의 중이라 확인이 늦을 수 있어요. 연락 주시면 빨리 올게요`;
@@ -199,6 +203,26 @@ async function stickerBlob(url) {
   g.fillStyle = '#68716C'; g.font = `500 26px ${F}`; g.fillText('전화번호는 서로 보이지 않습니다', W / 2, 718);
   return await new Promise(res => c.toBlob(res, 'image/png'));
 }
+
+/* ---------- 폰에만 두는 사진 (주차기록) ---------- */
+const idb = (() => {
+  let dbp;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('jg-local', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+  const run = (mode, fn) => open().then(db => new Promise((res, rej) => {
+    const t = db.transaction('photos', mode), st = t.objectStore('photos'), q = fn(st);
+    t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error);
+  }));
+  return {
+    put: (k, blob) => run('readwrite', st => st.put(blob, k)),
+    get: k => run('readonly', st => st.get(k)),
+    del: k => run('readwrite', st => st.delete(k)),
+    clear: () => run('readwrite', st => st.clear())
+  };
+})();
 
 /* ---------- 사진 ---------- */
 function resizeImage(file, max = 1600, q = 0.85) {

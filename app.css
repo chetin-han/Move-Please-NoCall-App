@@ -266,3 +266,26 @@ textarea{resize:none;height:64px}
 @keyframes ji-turn{0%,70%{opacity:0}77%,100%{opacity:1}}
 @keyframes ji-face{0%,83%{opacity:0;transform:scale(1.9)}87%{opacity:1}95.5%,100%{opacity:1;transform:scale(1)}}
 .kd.urgent{background:var(--warn)}
+
+/* ---------- 2차: 첫 화면 띠, 남긴 말 흰 상자, 아래 탭, 주차기록 ---------- */
+.say.box{background:#fff;padding:12px 16px 12px;border-radius:12px;margin-top:14px}
+.hero{margin:2px -20px 0;height:168px;overflow:hidden;background:var(--shot)}
+.hero img{width:100%;height:100%;object-fit:cover;object-position:50% 58%;display:block}
+.carnote{font-size:13.5px;color:var(--sub);margin-top:16px;font-weight:600}
+.opt-tag{font-size:11.5px;font-weight:700;color:var(--sub);border:1.5px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
+.nav{position:sticky;bottom:0;z-index:5;display:grid;grid-template-columns:repeat(3,1fr);margin:18px -20px calc(-20px - env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:#fff;border-top:1.5px solid var(--line)}
+.nav button{border:0;background:none;padding:15px 0;font-size:14.5px;font-weight:600;color:var(--sub)}
+.nav button.on{color:var(--ink);font-weight:800;box-shadow:inset 0 3px 0 var(--accent)}
+.pcard{display:grid;grid-template-columns:1fr auto;column-gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:0;border-radius:12px;padding:14px 16px;margin-top:18px}
+.pcard .k{grid-column:1;display:block;font-size:12.5px;color:var(--sub);font-weight:600}
+.pcard .v{grid-column:1;display:block;font-size:16px;font-weight:700;margin-top:2px;line-height:1.35}
+.pcard img{grid-row:1/3;grid-column:2;width:56px;height:56px;object-fit:cover;border-radius:8px}
+.pday{font-size:12.5px;font-weight:700;color:var(--sub);padding:14px 0 4px}
+.plog{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1.5px solid var(--line);padding:12px 0}
+.plog .t{font-variant-numeric:tabular-nums;font-weight:700;width:46px;flex:none;font-size:14px}
+.plog .tx{flex:1;min-width:0}
+.plog b{display:block;font-size:15px;line-height:1.35}
+.plog .tx span{display:block;font-size:13px;color:var(--sub);margin-top:2px}
+.plog img{width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none}
+.nophoto{font-size:11.5px;color:var(--sub);flex:none}
+.pbig{width:100%;border-radius:12px;display:block;max-height:58vh;object-fit:contain;background:#000}
