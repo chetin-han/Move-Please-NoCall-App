@@ -37,7 +37,7 @@ function toast(text, ms = 2600) {
 }
 
 /* ---------- 정해진 문구 ---------- */
-const REASONS = { exit: '출차해야 해요', block: '차가 앞을 막고 있어요', work: '하역·공사 작업이 있어요', etc: '기타' };
+const REASONS = { exit: '출차해야 해요', block: '차가 길을 막고 있어요', work: '하역·공사 작업이 있어요', etc: '기타' };
 const WHO = { hit: '제가 부딪혔어요', saw: '사고를 목격했어요' };
 const WHO_LONG = { hit: '상대 차량 운전자가 직접 알림', saw: '목격자가 알림' };
 const FLOORS = ['B4', 'B3', 'B2', 'B1', '1층', '2층', '3층', '4층 이상', '지상·야외'];
