@@ -228,6 +228,70 @@ async function stickerBlob(url) {
   return await new Promise(res => c.toBlob(res, 'image/png'));
 }
 
+/* ---------- 인쇄용 PDF: A4 일반 종이에 명함(90×50mm) QR 4장 ---------- */
+const PX = 11.811;   // 300dpi 기준 1mm
+const loadImg = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+async function cardCanvas(url) {
+  const F = 'Pretendard, "Malgun Gothic", sans-serif', mm = v => v * PX;
+  try { await Promise.all(['400 80px Gaegu', '800 40px Pretendard', '600 26px Pretendard'].map(f => document.fonts.load(f, '저기요'))); } catch (e) { }
+  const logo = await loadImg('icons/icon-512.png?v=2');
+  const c = document.createElement('canvas'); c.width = Math.round(mm(90)); c.height = Math.round(mm(50));
+  const g = c.getContext('2d'), rr = (x, y, w, h, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); };
+  g.fillStyle = '#ECEDE8'; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = '#1B6B4E'; g.fillRect(0, c.height - mm(1.6), c.width, mm(1.6));
+  /* 왼쪽 QR (흰 상자 + 진한 테두리) */
+  const box = 37 + 1.8 * 2, bx = mm(4), by = mm((50 - box) / 2);
+  rr(bx - mm(0.45), by - mm(0.45), mm(box + 0.9), mm(box + 0.9), mm(2.6)); g.fillStyle = '#1C211F'; g.fill();
+  rr(bx, by, mm(box), mm(box), mm(2.2)); g.fillStyle = '#fff'; g.fill();
+  const q = qrMake(url), n = q.getModuleCount(), cell = Math.floor(mm(37) / n), qs = cell * n, qx = Math.round(bx + (mm(box) - qs) / 2), qy = Math.round(by + (mm(box) - qs) / 2);
+  g.fillStyle = '#1C211F';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) g.fillRect(qx + k * cell, qy + r * cell, cell, cell);
+  /* 오른쪽 글: 로고+저기요 / 노란 꼬리표 / 제목 2줄 / 설명 2줄 */
+  const tx = mm(4 + box + 4); let y = mm(8.7);
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  if (logo) { g.save(); rr(tx, y, mm(8.5), mm(8.5), mm(8.5 * 0.28)); g.clip(); g.drawImage(logo, tx, y, mm(8.5), mm(8.5)); g.restore(); }
+  g.fillStyle = '#1C211F'; g.font = `400 ${mm(7.4)}px Gaegu, ${F}`; if ('letterSpacing' in g) g.letterSpacing = `${mm(0.3)}px`; g.fillText('저기요', tx + mm(10), y + mm(4.5)); if ('letterSpacing' in g) g.letterSpacing = '0px';
+  y += mm(8.5 + 2);
+  g.font = `800 ${mm(2.3)}px ${F}`; const tag = '이동주차 요청 · 사고 알림', tw = g.measureText(tag).width, th = mm(2.3 * 1.45);
+  rr(tx, y, tw + mm(2.3 * 1.4), th, th / 2); g.fillStyle = '#F5C63B'; g.fill();
+  g.fillStyle = '#1C211F'; g.fillText(tag, tx + mm(2.3 * 0.7), y + th / 2 + 1);
+  y += th + mm(2);
+  g.font = `800 ${mm(3.5)}px ${F}`;
+  ['차를 옮겨야 하면', 'QR을 찍어 주세요'].forEach((t, i) => g.fillText(t, tx, y + mm(3.5 * 1.25) * (i + 0.5)));
+  y += mm(3.5 * 1.25 * 2 + 2);
+  g.fillStyle = '#5E6762'; g.font = `600 ${mm(2.25)}px ${F}`;
+  ['전화번호 없이 차주에게', '조심스럽게 알려 드려요'].forEach((t, i) => g.fillText(t, tx, y + mm(2.25 * 1.35) * (i + 0.5)));
+  return c;
+}
+async function headCanvas(plate) {
+  const F = 'Pretendard, "Malgun Gothic", sans-serif', mm = v => v * PX;
+  const c = document.createElement('canvas'); c.width = Math.round(mm(184)); c.height = Math.round(mm(26));
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.textBaseline = 'alphabetic';
+  g.fillStyle = '#1C211F'; g.font = `800 ${mm(3.9)}px ${F}`; g.fillText(`저기요 QR 명함 · 90×50mm 4장 · ${plate}`, 0, mm(4));
+  g.fillStyle = '#5E6762'; g.font = `500 ${mm(2.65)}px ${F}`; g.fillText("A4 일반 종이(두꺼울수록 좋음)에 '실제 크기(100%)'로 인쇄 → 점선을 따라 자르기", 0, mm(8.6));
+  g.fillStyle = '#1B6B4E'; g.font = `800 ${mm(3.7)}px ${F}`; g.fillText('차량 앞/뒤쪽에서 볼 수 있도록 부착해주세요.', 0, mm(16.2));
+  g.fillStyle = '#5E6762'; g.font = `500 ${mm(3.2)}px ${F}`; g.fillText('(차량 번호를 통한 최초 인증이 있어요)', 0, mm(21.2));
+  g.font = `500 ${mm(2.3)}px ${F}`; g.textAlign = 'right'; g.fillText('아래 선이 50mm인지 확인', mm(184), mm(4));
+  return c;
+}
+async function stickerPDF(url, plate) {
+  if (!window.jspdf) await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+  const head = await headCanvas(plate), card = await cardCanvas(url);
+  doc.addImage(head.toDataURL('image/png'), 'PNG', 13, 7, 184, 26, 'head', 'FAST');
+  doc.setDrawColor(28, 33, 31); doc.setLineWidth(0.25);   // 50mm 확인선 (오른쪽 위)
+  doc.line(147, 13.5, 197, 13.5); doc.line(147, 12, 147, 13.5); doc.line(197, 12, 197, 13.5);
+  const img = card.toDataURL('image/png'), X0 = 13, Y0 = 38, W = 90, H = 50, GAP = 4;
+  doc.setDrawColor(150, 160, 155); doc.setLineWidth(0.2); doc.setLineDashPattern([1.2, 0.8], 0);
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 2; k++) {
+    const x = X0 + k * (W + GAP), y = Y0 + r * (H + GAP);
+    doc.addImage(img, 'PNG', x, y, W, H, 'card', 'FAST');
+    doc.rect(x, y, W, H);
+  }
+  return doc.output('blob');
+}
+
 /* ---------- 폰에만 두는 사진 (주차기록) ---------- */
 const idb = (() => {
   let dbp;

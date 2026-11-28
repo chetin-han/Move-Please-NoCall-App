@@ -503,7 +503,8 @@ function signupOv() {
     <div class="hint">회의 중에도 받으려면 폰의 <b>방해금지 모드 예외 앱</b>에 ${isIOS ? '저기요' : '크롬'}을 넣어 두세요.</div>`;
   else b = `<p class="muted center" style="line-height:1.5">등록이 끝났어요! 이 QR 스티커를 인쇄해서<br>차량 앞·뒤쪽, 밖에서 잘 보이는 곳에 붙여 주세요.</p>
     ${stickerHTML(carUrl())}
-    <button class="btn soft" data-act="sticker-dl" style="margin-top:14px">스티커 이미지 저장</button>
+    <button class="btn primary" data-act="sticker-pdf" style="margin-top:14px">인쇄용 PDF 받기 (명함 크기 4장)</button>
+    <button class="btn soft" data-act="sticker-dl">스티커 이미지 저장</button>
     <p class="muted center" style="font-size:12px;margin-top:8px;line-height:1.5">QR은 이 차량에 고정이에요. 나중에 차를 바꿔도 같은 QR을 쓸 수 있어요.</p>`;
   const next = s === 5 ? '시작하기' : s === lastInput ? (su.saving ? '저장 중…' : '등록하고 QR 받기') : '다음';
   return `<div class="ov">
@@ -516,7 +517,9 @@ function signupOv() {
 function stickerOv() {
   return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>내 QR 스티커</b><div class="muted">${esc(car.plate)} 전용 · 차량마다 1개 고정</div></div></div>
     <div class="ov-body">${stickerHTML(carUrl())}<div class="urlbox">${esc(carUrl())}</div>
-      <button class="btn primary" data-act="sticker-dl">스티커 이미지 저장</button>
+      <button class="btn primary" data-act="sticker-pdf">인쇄용 PDF 받기 (명함 크기 4장)</button>
+      <p class="muted center" style="font-size:12px;margin-top:6px;line-height:1.5">공유 창에서 Gmail을 고르면 내 메일로 보낼 수 있어요</p>
+      <button class="btn soft" data-act="sticker-dl">스티커 이미지 저장</button>
       <button class="btn ghost" data-act="copy" data-t="${esc(carUrl())}">주소 복사</button>
       <p class="muted center" style="margin-top:10px;line-height:1.5;font-size:12px">인쇄해서 차량 앞·뒤쪽, 밖에서 잘 보이는 곳에 붙여 주세요.</p></div></div>`;
 }
@@ -948,6 +951,16 @@ document.addEventListener('click', async e => {
       const res = await saveFiles([new File([blob], `저기요_QR스티커_${car.plate.replace(/\s/g, '')}.png`, { type: 'image/png' })]);
       if (res === 'downloaded') toast('스티커 이미지를 저장했어요');
       break;
+    }
+    case 'sticker-pdf': {
+      if (b.disabled) break;
+      b.disabled = true; const old = b.textContent; b.textContent = 'PDF 만드는 중…';
+      try {
+        const pdf = await stickerPDF(carUrl(), car.plate);
+        const res = await saveFiles([new File([pdf], `저기요_QR명함_${car.plate.replace(/\s/g, '')}.pdf`, { type: 'application/pdf' })]);
+        if (res === 'downloaded') toast('인쇄용 PDF를 저장했어요. A4에 실제 크기(100%)로 인쇄해 주세요', 4000);
+      } catch (err) { toast('PDF를 만들지 못했어요: ' + (err?.message || err), 4000); }
+      b.disabled = false; b.textContent = old; break;
     }
     case 'copy': try { await navigator.clipboard.writeText(b.dataset.t); toast('복사했어요'); } catch (err) { prompt('복사하세요', b.dataset.t); } break;
     case 'open-set': { const mm = myMem(); st = { name: mm.name || prof.name || '', phone: mm.phone || '', none: mm.call_type === 'none' }; ov = 'set'; renderOv(); break; }
