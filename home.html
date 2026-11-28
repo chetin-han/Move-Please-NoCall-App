@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>저기요 - QR로 주차 이동 요청·사고 알림</title>
+<meta name="description" content="저기요는 차에 붙인 QR 하나로 전화번호를 드러내지 않고 주차 이동 요청과 사고 알림을 주고받는 서비스입니다.">
+<meta property="og:title" content="저기요">
+<meta property="og:description" content="QR 하나로, 전화번호 없이 차주에게 조심스럽게 알려요.">
+<meta property="og:image" content="https://chetin-han.github.io/Move-Please-NoCall-App/icons/icon-512.png">
+<meta name="theme-color" content="#ECEDE8">
+<link rel="icon" href="icons/icon-192.png?v=2">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu&display=swap">
+<link rel="stylesheet" href="app.css?v=10">
+<style>
+.hero2{text-align:center;padding:26px 0 6px}
+.hero2 img{width:96px;height:96px;border-radius:24px}
+.hero2 h1{font-family:var(--voice);font-weight:400;font-size:56px;line-height:1;margin-top:10px;letter-spacing:.04em}
+.hero2 .tag{display:inline-block;background:var(--yl);font-weight:800;font-size:13px;border-radius:999px;padding:3px 12px;margin-top:10px}
+.hero2 p{font-size:17px;font-weight:700;line-height:1.5;margin-top:14px}
+.sec h3{font-size:17px;font-weight:800;margin:30px 0 8px}
+.sec p,.sec li{font-size:14.5px;line-height:1.65}
+.feat{list-style:none;padding:0;margin:0}
+.feat li{padding:11px 0;border-top:1.5px solid var(--line)}
+.feat b{display:block;font-size:15px}
+.feat span{color:var(--sub);font-size:13.5px}
+.flow{counter-reset:s;list-style:none;padding:0;margin:0}
+.flow li{counter-increment:s;position:relative;padding:10px 0 10px 38px;border-top:1.5px solid var(--line)}
+.flow li::before{content:counter(s);position:absolute;left:0;top:10px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-weight:800;font-size:13.5px;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hero2">
+    <img src="icons/icon-512.png?v=2" alt="저기요 로고">
+    <h1>저기요</h1>
+    <span class="tag">이동주차 요청 · 사고 알림</span>
+    <p>차를 옮겨야 할 때, QR을 찍어<br>전화번호 없이 차주에게 조심스럽게 알려요</p>
+  </div>
+
+  <div class="sec">
+    <h3>저기요는 이런 서비스예요</h3>
+    <p>차 앞유리에 전화번호를 두면 모르는 사람에게 번호가 그대로 알려지고, 광고·사칭 문자에 쓰일 수도 있어요. 저기요는 차에 붙인 <b>QR 스티커</b>로 연락을 대신 전해 줘서, 차주와 요청자 모두 번호를 드러내지 않고 주차 이동 요청·사고 알림을 주고받을 수 있어요.</p>
+
+    <h3>이렇게 써요</h3>
+    <ol class="flow">
+      <li><b>차주</b>가 구글 계정으로 로그인해 차량을 등록하고, QR 스티커를 인쇄해 차에 붙여요.</li>
+      <li><b>요청자</b>는 가입 없이 QR을 찍고, 번호판의 가려진 숫자를 맞힌 뒤 요청을 보내요.</li>
+      <li>차주 휴대폰에 답할 때까지 알림이 반복되고, 차주는 "지금 가요" 같은 답장이나 메시지로 응답해요.</li>
+    </ol>
+
+    <h3>주요 기능</h3>
+    <ul class="feat">
+      <li><b>주차 이동 요청</b><span>사유와 주차 위치를 골라 보내고, 차주의 남은 도착 시간을 확인해요</span></li>
+      <li><b>사고·차량 상태 알림</b><span>접촉 사고, 라이트 켜짐, 창문 열림 같은 상황을 알려요. 긴급 상황은 더 강하게 알려요</span></li>
+      <li><b>번호 없이 메시지</b><span>정해진 문구 위주로 짧게 주고받고, 전화가 필요하면 차주가 정한 0507 안심번호로 연결돼요</span></li>
+      <li><b>공동차주·임시 운전자</b><span>가족과 차량을 함께 쓰고, 렌트·차 빌려주기 때는 정한 시간 동안만 연락을 맡길 수 있어요</span></li>
+      <li><b>주차기록</b><span>세운 곳을 남겨 두면 나중에 찾기 쉬워요. 사진은 내 휴대폰에만 저장돼요</span></li>
+    </ul>
+
+    <h3>개인정보</h3>
+    <p>저기요는 연락 전달에 필요한 정보만 모으고, 끝난 요청은 30일 뒤 자동으로 지워요. 위치(GPS)는 모으지 않아요. 자세한 내용은 <a class="linkbtn" href="privacy.html">개인정보처리방침</a>과 <a class="linkbtn" href="terms.html">이용약관</a>을 확인해 주세요.</p>
+    <p class="muted" style="margin-top:12px">지금은 무료 시험판이에요. 문의: <a class="linkbtn" href="mailto:chetin.han@gmail.com">chetin.han@gmail.com</a></p>
+  </div>
+
+  <div class="spacer"></div>
+  <a class="btn primary" href="./">저기요 시작하기</a>
+  <a class="btn ghost" href="install.html">설치·알림 켜는 방법</a>
+  <p class="fine">저기요 · <a class="linkbtn" href="privacy.html">개인정보처리방침</a> · <a class="linkbtn" href="terms.html">이용약관</a></p>
+</div>
+</body>
+</html>
