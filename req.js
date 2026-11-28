@@ -139,7 +139,8 @@ const V = {
       : ch === ' ' ? '<i class="gap"></i>' : esc(ch)).join('')}</span>
     ${vErr ? `<div class="errline">${esc(vErr)}</div>` : ''}
     <div class="spacer"></div>
-    <button class="btn primary" data-act="verify" id="vbtn" disabled>확인</button>`,
+    <button class="btn primary" data-act="verify" id="vbtn" disabled>확인</button>
+    <p class="fine">확인을 누르면 <a class="linkbtn" href="terms.html" target="_blank">이용약관</a>과 <a class="linkbtn" href="privacy.html" target="_blank">개인정보처리방침</a>에 동의한 것으로 봐요</p>`,
 
   /* 시간이 끝난 뒤: 감사 인사와 가입 안내 */
   bye: () => `${APPBAR}
@@ -186,7 +187,7 @@ const V = {
         <div class="h">영상을 받을 연락처</div>
         <input class="fi" id="ac-name" maxlength="10" placeholder="이름 (선택)" value="${esc(ac.name)}" autocomplete="name">
         <input class="fi" id="ac-phone" type="tel" inputmode="numeric" maxlength="13" placeholder="전화번호" value="${esc(ac.phone)}" autocomplete="tel">
-        <label class="agree"><input type="checkbox" id="ac-agree"${ac.agree ? ' checked' : ''}> <span>차주에게 내 연락처를 전달하는 데 동의해요</span></label>
+        <label class="agree"><input type="checkbox" id="ac-agree"${ac.agree ? ' checked' : ''}> <span>차주(공동차주·임시 운전자 포함)에게 내 이름·연락처를 전달하는 데 동의해요 · <a class="linkbtn" href="privacy.html" target="_blank">개인정보처리방침</a></span></label>
         <div class="spacer"></div>
         ${sendBtn('primary', '영상 확인 요청 보내기', okAcc())}` : `
         <div class="h">내 정보</div>
@@ -195,7 +196,7 @@ const V = {
         <input class="fi" id="ac-phone" type="tel" inputmode="numeric" maxlength="13" placeholder="전화번호" value="${esc(ac.phone)}" autocomplete="tel">
         <div class="photos" id="photos">${photosHTML(ac, 3)}</div>
         <textarea id="ac-desc" maxlength="60" placeholder="사고 내용 (선택)">${esc(ac.desc)}</textarea>
-        <label class="agree"><input type="checkbox" id="ac-agree"${ac.agree ? ' checked' : ''}> <span>차주에게 내 이름·차량번호·전화번호와 사진을 전달하는 데 동의해요</span></label>
+        <label class="agree"><input type="checkbox" id="ac-agree"${ac.agree ? ' checked' : ''}> <span>차주(공동차주·임시 운전자 포함)에게 내 이름·차량번호·전화번호와 사진을 전달하는 데 동의해요 · <a class="linkbtn" href="privacy.html" target="_blank">개인정보처리방침</a></span></label>
         <div class="spacer"></div>
         ${sendBtn('danger', '긴급 알림 보내기', okAcc())}`}`;
     }
@@ -334,9 +335,9 @@ function dialOv() {
   const t = info.call_type;
   return `<div class="ov"><div class="ov-h"><button class="back" data-act="close-ov" aria-label="닫기">‹</button><div><b>차주에게 전화</b></div></div>
     <div class="dial">${callNum ? `
-      <span class="tag">${t === 'safe' ? '안심번호 (시험판에서는 차주 번호로 연결)' : '차주 휴대폰 번호'}</span>
-      <div class="num">${esc(t === 'safe' ? maskNum(callNum) : callNum)}</div>
-      <div class="note">누르면 폰의 전화 앱이 열리고 번호가 들어가 있어요.${t === 'safe' ? ' 정식 서비스에서는 0507 안심번호로 연결돼 서로의 번호가 남지 않아요.' : ''}</div>
+      <span class="tag">${/^050/.test(callNum.replace(/\D/g, '')) ? '차주 0507 안심번호' : '차주 휴대폰 번호'}</span>
+      <div class="num">${esc(fmtPhone(callNum))}</div>
+      <div class="note">누르면 폰의 전화 앱이 열리고 번호가 들어가 있어요.${/^050/.test(callNum.replace(/\D/g, '')) ? ' 안심번호라 차주의 실제 번호는 드러나지 않아요.' : ''}</div>
       <div class="spacer"></div>
       <a class="btn primary" href="tel:${callNum.replace(/\D/g, '')}" data-act="log-call">전화 걸기</a>`
       : `<div class="note">차주가 전화 연결을 꺼 두었어요. 메시지로 연락해 주세요.</div>`}
@@ -346,7 +347,7 @@ function renderOv(force) {
   if ((ov === 'chat' || ov === 'dial') && !cur) ov = null;
   const k = ov === 'photo' ? 'photo' + photoI : (ov || '') + '|' + (cur?.id || '') + '|' + freeInput;
   if (!force && k === ovKey) return; ovKey = k;
-  OV.innerHTML = ov === 'chat' ? chatOvHTML('차주와 메시지', `${esc(info?.plate_masked || '')} 차주, 번호는 서로 보이지 않아요`, QUICK_OF(cur, 'r'), freeInput)
+  OV.innerHTML = ov === 'chat' ? chatOvHTML('차주와 메시지', `${esc(info?.plate_masked || '')} 차주, 메시지에는 번호가 보이지 않아요`, QUICK_OF(cur, 'r'), freeInput)
     : ov === 'dial' ? dialOv() : ov === 'photo' ? photoOvHTML(photoList, photoI) : '';
   if (ov === 'chat') { unread = 0; updateMsgs(); }
 }

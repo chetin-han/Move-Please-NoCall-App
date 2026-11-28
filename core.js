@@ -1,7 +1,11 @@
 /* 저기요 시험판 — 차주 앱·요청자 화면이 함께 쓰는 기능 */
 const CFG = window.MOVECALL_CONFIG;
+/* 내 PC에서 시험할 때만: ?as=a 처럼 붙이면 탭마다 다른 사람으로 로그인 (구글 로그인 없이 익명으로 차주 시험) */
+const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+const DEV_AS = DEV ? (new URLSearchParams(location.search).get('as') || sessionStorage.getItem('dev-as') || '') : '';
+if (DEV_AS) sessionStorage.setItem('dev-as', DEV_AS);
 const sb = window.supabase.createClient(CFG.url, CFG.key, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'movecall-auth' }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce', storageKey: 'movecall-auth' + (DEV_AS ? '-' + DEV_AS : '') }
 });
 
 /* ---------- 작은 도우미 ---------- */
@@ -15,7 +19,14 @@ const DAYS = '일월화수목금토';
 const dateStr = d => `${d.getMonth() + 1}월 ${d.getDate()}일 ${DAYS[d.getDay()]}요일`;
 const secs = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${s % 60}초`; };
 const mmss = ms => { const s = Math.ceil(ms / 1000); return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`; };
-const fmtPhone = v => { const d = String(v).replace(/\D/g, '').slice(0, 11); if (d.length < 4) return d; if (d.length < 8) return d.slice(0, 3) + '-' + d.slice(3); return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4); };
+/* 010-1234-5678, 0507 안심번호(0507-1234-5678)는 12자리 */
+const fmtPhone = v => {
+  const raw = String(v).replace(/\D/g, ''), d = raw.slice(0, /^050/.test(raw) ? 12 : 11);
+  if (/^050/.test(d) && d.length > 4) return d.slice(0, 4) + '-' + (d.length > 8 ? d.slice(4, 8) + '-' + d.slice(8) : d.slice(4));
+  if (d.length < 4) return d; if (d.length < 8) return d.slice(0, 3) + '-' + d.slice(3); return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+};
+const phoneOK = v => { const d = String(v).replace(/\D/g, ''); return /^050\d{9}$/.test(d) || /^0\d{8,10}$/.test(d); };
+const callTypeOf = v => /^050/.test(String(v).replace(/\D/g, '')) ? 'safe' : 'real';
 const setText = (s, v) => $$(s).forEach(e => { if (e.textContent !== String(v)) e.textContent = v; });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -130,7 +141,8 @@ function statusText(c) {
 }
 const leaveText = c => timeValid(c.leave_at, c.leave_set_at || c.status_at, 30) ? `${koTime(c.leave_at)}에 나갈 예정이에요` : '';
 const STATUS = { ringing: '응답 대기', replied: '답장함', resolving: '해결 확인 중', done: '완료', cancelled: '취소' };
-const CALL_LABEL = { safe: '안심번호', real: '내 휴대폰 번호', none: '전화 받지 않음' };
+const CALL_LABEL = { safe: '0507 안심번호', real: '휴대폰 번호', none: '전화 받지 않음' };
+const ROLE_LABEL = { owner: '본 차주', co: '공동차주', temp: '임시 운전자' };
 const KIND_LABEL = { move: '주차 이동 요청', acc: '사고 알림', bb: '블랙박스 영상 요청', etc: '기타 알림' };
 const locText = l => l ? [l.floor, l.zone].filter(Boolean).join(' ') + (l.memo ? ` (${l.memo})` : '') : '';
 const headOf = r => r.kind === 'acc' ? `사고 알림 ${r.acc?.name || ''}`.trim()
@@ -138,7 +150,19 @@ const headOf = r => r.kind === 'acc' ? `사고 알림 ${r.acc?.name || ''}`.trim
   : r.kind === 'etc' ? (ETC[r.sub]?.t || '기타 알림')
   : (REASONS[r.reason] || '이동 요청');
 
-/* ---------- 로그인(익명) ---------- */
+/* ---------- 로그인 ---------- */
+/* 차주: 구글 계정 (휴대폰을 바꿔도 내 차를 그대로 쓰고, 공동차주 초대에 필요) */
+const backUrl = extra => location.origin + location.pathname + (extra || '');
+async function googleLogin(extra) {
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: backUrl(extra) } });
+  if (error) throw error;
+}
+/* 예전 익명 가입 차주: 같은 계정에 구글을 연결해서 차량·기록을 그대로 유지 */
+async function linkGoogle(extra) {
+  const { error } = await sb.auth.linkIdentity({ provider: 'google', options: { redirectTo: backUrl(extra) } });
+  if (error) throw error;
+}
+/* 요청자: 익명 (가입 없이 바로 사용) */
 async function ensureUser() {
   const { data: { session } } = await sb.auth.getSession();
   if (session?.user) return session.user;
@@ -183,7 +207,7 @@ function qrSVG(text, cls) {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
   return `<svg class="${cls || 'qr'}" viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#111"/></svg>`;
 }
-const stickerHTML = url => `<div class="stk"><div class="stk-top">${BRAND}</div>${qrSVG(url, 'qrbig')}<div class="stk-s">QR을 찍으면 차주에게 바로 연락돼요<br>전화번호는 서로 보이지 않습니다</div></div>`;
+const stickerHTML = url => `<div class="stk"><div class="stk-top">${BRAND}</div>${qrSVG(url, 'qrbig')}<div class="stk-s">QR을 찍으면 차주에게 바로 연락돼요<br>메시지는 전화번호 없이 주고받아요</div></div>`;
 async function stickerBlob(url) {
   const W = 600, H = 860, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
   const rr = (x, y, w, h, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); };
@@ -200,7 +224,7 @@ async function stickerBlob(url) {
   g.fillStyle = '#111';
   for (let r = 0; r < n; r++) for (let cc = 0; cc < n; cc++) if (q.isDark(r, cc)) g.fillRect(qx + cc * cell, qy + r * cell, Math.ceil(cell), Math.ceil(cell));
   g.textAlign = 'center'; g.fillStyle = '#1C211F'; g.font = `800 30px ${F}`; g.fillText('QR을 찍으면 차주에게 바로 연락돼요', W / 2, 668);
-  g.fillStyle = '#68716C'; g.font = `500 26px ${F}`; g.fillText('전화번호는 서로 보이지 않습니다', W / 2, 718);
+  g.fillStyle = '#68716C'; g.font = `500 26px ${F}`; g.fillText('메시지는 전화번호 없이 주고받아요', W / 2, 718);
   return await new Promise(res => c.toBlob(res, 'image/png'));
 }
 
