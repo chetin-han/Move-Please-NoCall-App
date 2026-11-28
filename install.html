@@ -13,7 +13,7 @@
 .steps{counter-reset:s;list-style:none;padding:0;margin:10px 0 0}
 .steps li{counter-increment:s;position:relative;padding:10px 0 10px 38px;border-top:1.5px solid var(--line);font-size:15px;line-height:1.5}
 .steps li::before{content:counter(s);position:absolute;left:0;top:10px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-weight:800;font-size:13.5px;display:flex;align-items:center;justify-content:center}
-.os{display:none}.os.on{display:block}
+.js .os{display:none}.js .os.on{display:block}
 .seg{display:flex;gap:8px;margin-top:14px}
 .seg button{flex:1;height:42px;border-radius:21px;border:1.5px solid var(--line);background:#fff;font-weight:800;font-size:14px}
 .seg button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -22,9 +22,9 @@
 <body>
 <div class="app">
   <div class="appbar"><img class="logo" src="icons/icon-192.png?v=2" alt=""><span class="wm">저기요</span><span class="appbar-sub">설치 방법</span></div>
-  <h2 class="big" style="margin-top:8px">홈 화면에 설치하고<br>알림을 켜 주세요</h2>
-  <p class="lead">설치해 두면 앱을 닫아도 요청이 오면 진동과 함께 알려 드려요. 설치는 무료예요.</p>
-  <div class="seg"><button data-os="and">안드로이드</button><button data-os="ios">아이폰</button></div>
+  <h1 class="big" style="margin-top:8px">홈 화면에 설치하고<br>알림을 켜 주세요</h1>
+  <p class="lead">설치해 두면 앱을 닫아도 요청이 오면 알림으로 알려 드려요(안드로이드는 진동 포함). 설치는 무료예요.</p>
+  <div class="seg"><button type="button" data-os="and" aria-pressed="false">안드로이드</button><button type="button" data-os="ios" aria-pressed="false">아이폰</button></div>
 
   <div class="os" id="os-and">
     <ol class="steps">
@@ -39,7 +39,7 @@
   <div class="os" id="os-ios">
     <ol class="steps">
       <li><b>Safari</b>로 저기요 주소를 열어요 (iOS 16.4 이상)</li>
-      <li>아래쪽 <b>공유 버튼(□↑)</b> → <b>홈 화면에 추가</b></li>
+      <li><b>공유 버튼(□↑)</b>을 눌러요. 안 보이면 주소창 옆 <b>⋯</b> 메뉴 안에 있어요 → <b>홈 화면에 추가</b></li>
       <li>홈 화면에 생긴 <b>저기요</b> 아이콘으로 열어요<br><span class="muted">Safari에서 연 화면은 알림을 받을 수 없어요</span></li>
       <li>구글 계정으로 로그인 → 차량 등록 중 <b>알림 허용</b>을 눌러요</li>
     </ol>
@@ -48,12 +48,13 @@
 
   <div class="spacer"></div>
   <a class="btn primary" href="./">저기요 열기</a>
-  <p class="fine">시험판입니다. 입력한 정보는 시험이 끝나면 삭제돼요.</p>
+  <p class="fine">시험판입니다. 입력한 정보는 시험이 끝나면 삭제돼요.<br><a class="linkbtn" href="home.html">저기요 소개</a> · <a class="linkbtn" href="terms.html">이용약관</a> · <a class="linkbtn" href="privacy.html">개인정보처리방침</a></p>
 </div>
 <script>
+document.documentElement.classList.add('js');
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const pick = os => {
-  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.os === os));
+  document.querySelectorAll('.seg button').forEach(b => { b.classList.toggle('on', b.dataset.os === os); b.setAttribute('aria-pressed', b.dataset.os === os); });
   document.querySelectorAll('.os').forEach(d => d.classList.toggle('on', d.id === 'os-' + os));
 };
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => pick(b.dataset.os));
